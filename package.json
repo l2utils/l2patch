@@ -1,0 +1,54 @@
+{
+  "name": "@l2utils/l2patch",
+  "version": "1.0.0",
+  "description": "Lineage 2 client patch inspection and file download utility",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "l2patch": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "cli": "ts-node src/cli.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/l2utils/l2patch.git"
+  },
+  "keywords": [
+    "Lineage 2",
+    "patch",
+    "updater",
+    "downloader",
+    "l2patch"
+  ],
+  "author": "",
+  "license": "BSD-3-Clause",
+  "bugs": {
+    "url": "https://github.com/l2utils/l2patch/issues"
+  },
+  "homepage": "https://github.com/l2utils/l2patch#readme",
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.13.5",
+    "jest": "^30.2.0",
+    "prettier": "^3.2.5",
+    "ts-jest": "^29.4.6",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "commander": "^14.0.2"
+  }
+}

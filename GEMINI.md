@@ -1,0 +1,3 @@
+# Gemini & Antigravity Instructions
+
+Please refer to and follow the repository guidelines in [AGENTS.md](AGENTS.md).
