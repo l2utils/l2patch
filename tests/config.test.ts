@@ -171,4 +171,15 @@ describe("config", () => {
     const config = resolveConfig({ cdnHost: "override.cdn.net" });
     expect(config.cdnHost).toBe("override.cdn.net");
   });
+
+  test("resolveConfig parses maxRetries, retryDelayMs, and delayMs from environment", () => {
+    process.env.L2_PATCH_MAX_RETRIES = "5";
+    process.env.L2_PATCH_RETRY_DELAY_MS = "2000";
+    process.env.L2_PATCH_DELAY_MS = "300";
+
+    const config = resolveConfig();
+    expect(config.maxRetries).toBe(5);
+    expect(config.retryDelayMs).toBe(2000);
+    expect(config.delayMs).toBe(300);
+  });
 });

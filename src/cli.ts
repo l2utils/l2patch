@@ -35,6 +35,14 @@ program
   .option(
     "--auth-token <token>",
     "Authorization token for protected endpoints"
+  )
+  .option(
+    "-r, --retries <count>",
+    "Maximum retry attempts on rate limit or network failure (default: 3)"
+  )
+  .option(
+    "-d, --delay <ms>",
+    "Delay in milliseconds between requests to prevent CDN rate limiting (default: 0)"
   );
 
 // Add individual commands using addCommand

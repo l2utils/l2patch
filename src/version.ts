@@ -160,18 +160,52 @@ export async function checkCurrentVersion(
 
   const headers: Record<string, string> = {
     Accept: "application/json, text/plain, */*",
-    "User-Agent": "l2patch/1.0.0",
   };
 
   if (config.authToken) {
     headers["Authorization"] = `Bearer ${config.authToken}`;
   }
 
-  const response = await fetch(versionUrl, { headers });
-  if (!response.ok) {
-    throw new Error(
-      `Failed to check version from ${versionUrl}: ${response.status} ${response.statusText}`
-    );
+  const maxRetries = config.maxRetries ?? 3;
+  const isTest = process.env.NODE_ENV === "test";
+  const initialDelayMs = config.retryDelayMs ?? (isTest ? 10 : 1000);
+  let response: Response | undefined;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const resp = await fetch(versionUrl, { headers });
+      const isRetryable =
+        resp.status === 403 ||
+        resp.status === 429 ||
+        resp.status >= 500;
+
+      if (resp.ok || !isRetryable || attempt === maxRetries) {
+        response = resp;
+        break;
+      }
+
+      await new Promise((r) =>
+        setTimeout(
+          r,
+          Math.min(initialDelayMs * Math.pow(2, attempt) + Math.random() * 200, 10000)
+        )
+      );
+    } catch (err) {
+      if (attempt === maxRetries) {
+        throw err;
+      }
+      await new Promise((r) =>
+        setTimeout(
+          r,
+          Math.min(initialDelayMs * Math.pow(2, attempt) + Math.random() * 200, 10000)
+        )
+      );
+    }
+  }
+
+  if (!response || !response.ok) {
+    const status = response ? `${response.status} ${response.statusText}` : "Unknown error";
+    throw new Error(`Failed to check version from ${versionUrl}: ${status}`);
   }
 
   const contentType = response.headers.get("content-type") || "";

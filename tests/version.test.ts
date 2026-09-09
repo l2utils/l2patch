@@ -135,6 +135,81 @@ describe("version", () => {
       ).rejects.toThrow("Failed to check version from https://example.com/missing: 404 Not Found");
     });
 
+    test("does not send User-Agent header in HTTP request", async () => {
+      let sentHeaders: any;
+      global.fetch = jest.fn().mockImplementation(async (_url, init) => {
+        sentHeaders = init?.headers;
+        return {
+          ok: true,
+          headers: new Headers({ "content-type": "application/json" }),
+          text: async () => JSON.stringify({ version: "145" }),
+        } as unknown as Response;
+      });
+
+      await checkCurrentVersion({
+        versionUrl: "https://example.com/version.json",
+      });
+
+      expect(sentHeaders["User-Agent"]).toBeUndefined();
+    });
+
+    test("retries on retryable status code and recovers", async () => {
+      let calls = 0;
+      global.fetch = jest.fn().mockImplementation(async () => {
+        calls++;
+        if (calls === 1) {
+          return {
+            ok: false,
+            status: 500,
+            statusText: "Internal Error",
+          } as unknown as Response;
+        }
+        return {
+          ok: true,
+          headers: new Headers({ "content-type": "application/json" }),
+          text: async () => JSON.stringify({ version: "145" }),
+        } as unknown as Response;
+      });
+
+      const info = await checkCurrentVersion({
+        versionUrl: "https://example.com/version.json",
+      });
+      expect(calls).toBe(2);
+      expect(info.version).toBe("145");
+    });
+
+    test("retries on network exception and recovers", async () => {
+      let calls = 0;
+      global.fetch = jest.fn().mockImplementation(async () => {
+        calls++;
+        if (calls === 1) {
+          throw new Error("Network blip");
+        }
+        return {
+          ok: true,
+          headers: new Headers({ "content-type": "application/json" }),
+          text: async () => JSON.stringify({ version: "145" }),
+        } as unknown as Response;
+      });
+
+      const info = await checkCurrentVersion({
+        versionUrl: "https://example.com/version.json",
+      });
+      expect(calls).toBe(2);
+      expect(info.version).toBe("145");
+    });
+
+    test("throws after retries are exhausted on network failure", async () => {
+      global.fetch = jest.fn().mockRejectedValue(new Error("Fatal connection refused"));
+
+      await expect(
+        checkCurrentVersion({
+          versionUrl: "https://example.com/version.json",
+          maxRetries: 1,
+        })
+      ).rejects.toThrow("Fatal connection refused");
+    });
+
     test("queries TCP updater daemon via queryUpdaterServer", async () => {
       const { EventEmitter } = require("events");
       const net = require("net");

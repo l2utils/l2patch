@@ -32,6 +32,16 @@ export function createDownloadCommand(): Command {
       "-o, --output <file>",
       "Save to a file instead of streaming to stdout"
     )
+    .option(
+      "-r, --retries <number>",
+      "Maximum retry attempts for failed requests",
+      "3"
+    )
+    .option(
+      "--skip-existing",
+      "Skip downloading if output file already exists locally",
+      false
+    )
     .option("--progress", "Display download progress")
     .option("--no-progress", "Disable download progress")
     .action(async (filePath, cmdOpts, cmd) => {
@@ -40,6 +50,14 @@ export function createDownloadCommand(): Command {
         requireBaseUrl(config);
 
         const targetVersion = cmdOpts.to || cmdOpts.version;
+        const maxRetries = parseInt(cmdOpts.retries, 10);
+
+        if (cmdOpts.output && cmdOpts.skipExisting) {
+          const dest = path.resolve(process.cwd(), cmdOpts.output);
+          if (fs.existsSync(dest) && fs.statSync(dest).size > 0) {
+            return;
+          }
+        }
 
         const reporter = new FileProgressReporter({
           stream: process.stderr,
@@ -64,6 +82,7 @@ export function createDownloadCommand(): Command {
             fromVersion: cmdOpts.from,
             toVersion,
             config,
+            maxRetries,
             onProgress: (p) => reporter.update(p),
           });
         } else {
@@ -71,11 +90,13 @@ export function createDownloadCommand(): Command {
             version: targetVersion,
             latest: cmdOpts.latest && !targetVersion,
             config,
+            maxRetries,
             onProgress: (p) => reporter.update(p),
           });
         }
 
         reporter.finish();
+
 
 
         if (cmdOpts.output) {

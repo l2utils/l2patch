@@ -11,13 +11,18 @@ import {
   downloadPatch,
   downloadPatchUpdate,
   downloadToBuffer,
+  downloadToFile,
   downloadUpdate,
   fetchFullZip,
   fetchManifest,
   fetchPatch,
+  fetchWithRetry,
   loadManifestFileList,
   parseManifestFiles,
+  parseRetryAfter,
   probeUrl,
+  runWithConcurrency,
+  NC_CDN_HEADERS,
 } from "../src/downloader";
 
 function createMockArrayBuffer(content: string): ArrayBuffer {
@@ -1026,6 +1031,325 @@ describe("downloader", () => {
       expect(result.mode).toBe("archive");
       expect(batchEvents.length).toBeGreaterThan(0);
       expect(fileEvents.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("NC_CDN_HEADERS & No User-Agent", () => {
+
+    test("NC_CDN_HEADERS has expected wire headers and no User-Agent", () => {
+      expect(NC_CDN_HEADERS.Accept).toBe("*/*");
+      expect(NC_CDN_HEADERS["Accept-Encoding"]).toBe("identity");
+      expect(NC_CDN_HEADERS["Cache-Control"]).toBe("no-transform");
+      expect((NC_CDN_HEADERS as Record<string, string>)["User-Agent"]).toBeUndefined();
+    });
+
+    test("probeUrl does not send User-Agent header", async () => {
+      let sentHeaders: any;
+      global.fetch = jest.fn().mockImplementation(async (_url, opts) => {
+        sentHeaders = opts?.headers;
+        return { ok: true } as unknown as Response;
+      });
+
+      await probeUrl("https://example.com/test.zip");
+      expect(sentHeaders["User-Agent"]).toBeUndefined();
+      expect(sentHeaders.Accept).toBe("*/*");
+    });
+
+    test("downloadToBuffer does not send User-Agent header", async () => {
+      let sentHeaders: any;
+      global.fetch = jest.fn().mockImplementation(async (_url, opts) => {
+        sentHeaders = opts?.headers;
+        return {
+          ok: true,
+          arrayBuffer: async () => createMockArrayBuffer("test-content"),
+        } as unknown as Response;
+      });
+
+      await downloadToBuffer("https://example.com/test.zip");
+      expect(sentHeaders["User-Agent"]).toBeUndefined();
+      expect(sentHeaders.Accept).toBe("*/*");
+    });
+
+    test("loadManifestFileList does not send User-Agent header on remote fetch", async () => {
+      let sentHeaders: any;
+      global.fetch = jest.fn().mockImplementation(async (_url, opts) => {
+        sentHeaders = opts?.headers;
+        return {
+          ok: true,
+          arrayBuffer: async () => createMockArrayBuffer("system/file.dat\n"),
+        } as unknown as Response;
+      });
+
+      await loadManifestFileList("https://example.com/manifest.txt");
+      expect(sentHeaders["User-Agent"]).toBeUndefined();
+      expect(sentHeaders.Accept).toBe("*/*");
+    });
+  });
+
+  describe("parseRetryAfter", () => {
+    test("returns undefined for null or empty", () => {
+      expect(parseRetryAfter(null)).toBeUndefined();
+      expect(parseRetryAfter("")).toBeUndefined();
+    });
+
+    test("parses integer seconds into milliseconds", () => {
+      expect(parseRetryAfter("30")).toBe(30000);
+      expect(parseRetryAfter("0")).toBe(0);
+    });
+
+    test("returns undefined for negative or invalid numbers", () => {
+      expect(parseRetryAfter("-10")).toBeUndefined();
+      expect(parseRetryAfter("not-a-number-or-date")).toBeUndefined();
+    });
+
+    test("parses future HTTP date into difference in milliseconds", () => {
+      const future = new Date(Date.now() + 5000).toUTCString();
+      const delay = parseRetryAfter(future);
+      expect(delay).toBeDefined();
+      expect(delay!).toBeGreaterThan(0);
+      expect(delay!).toBeLessThanOrEqual(6000);
+    });
+
+    test("returns 0 for past HTTP date", () => {
+      const past = new Date(Date.now() - 5000).toUTCString();
+      expect(parseRetryAfter(past)).toBe(0);
+    });
+  });
+
+  describe("fetchWithRetry", () => {
+    test("returns response immediately on 200 OK", async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+      } as unknown as Response);
+
+      const resp = await fetchWithRetry("https://example.com/ok");
+      expect(resp.status).toBe(200);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test("retries on 403 Forbidden and succeeds on next attempt", async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 403,
+          headers: new Headers(),
+        } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+        } as unknown as Response);
+
+      const resp = await fetchWithRetry("https://example.com/throttled", undefined, {
+        retryDelayMs: 1,
+      });
+      expect(resp.status).toBe(200);
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    test("retries on 429 Too Many Requests and honors Retry-After", async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 429,
+          headers: new Headers({ "retry-after": "0" }),
+        } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+        } as unknown as Response);
+
+      const resp = await fetchWithRetry("https://example.com/rate-limited");
+      expect(resp.status).toBe(200);
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    test("retries on 502, 503, 504 server errors", async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 502,
+          headers: new Headers(),
+        } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 503,
+          headers: new Headers(),
+        } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+        } as unknown as Response);
+
+      const resp = await fetchWithRetry("https://example.com/server-error", undefined, {
+        retryDelayMs: 1,
+      });
+      expect(resp.status).toBe(200);
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+    });
+
+    test("returns non-retryable 404 without retrying", async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        headers: new Headers(),
+      } as unknown as Response);
+
+      const resp = await fetchWithRetry("https://example.com/not-found", undefined, {
+        maxRetries: 3,
+        retryDelayMs: 1,
+      });
+      expect(resp.status).toBe(404);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test("retries on network exception and recovers", async () => {
+      global.fetch = jest
+        .fn()
+        .mockRejectedValueOnce(new Error("Connection reset"))
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+        } as unknown as Response);
+
+      const resp = await fetchWithRetry("https://example.com/network", undefined, {
+        retryDelayMs: 1,
+      });
+      expect(resp.status).toBe(200);
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+    });
+
+    test("rethrows when retries are exhausted on network failure", async () => {
+      global.fetch = jest.fn().mockRejectedValue(new Error("Fatal connection timeout"));
+
+      await expect(
+        fetchWithRetry("https://example.com/fatal", undefined, {
+          maxRetries: 2,
+          retryDelayMs: 1,
+        })
+      ).rejects.toThrow("Fatal connection timeout");
+      expect(global.fetch).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe("runWithConcurrency with delayMs", () => {
+    test("paces execution when delayMs > 0", async () => {
+      const startTimes: number[] = [];
+      const items = [1, 2, 3];
+
+      await runWithConcurrency(
+        items,
+        2,
+        async (item) => {
+          startTimes.push(Date.now());
+          return item * 2;
+        },
+        30
+      );
+
+      expect(startTimes.length).toBe(3);
+      expect(startTimes[1] - startTimes[0]).toBeGreaterThanOrEqual(20);
+    });
+  });
+
+  describe("skipExisting option", () => {
+    test("downloadToFile skips when destination file exists with size > 0", async () => {
+      const dest = path.join(testOutDir, "already_exists.dat");
+      fs.writeFileSync(dest, "already downloaded content");
+      global.fetch = jest.fn();
+
+      const result = await downloadToFile("https://example.com/file.dat", dest, undefined, {
+        skipExisting: true,
+      });
+
+      expect(result).toBe(dest);
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test("downloadToFile proceeds when destination exists but is empty (0 bytes)", async () => {
+      const dest = path.join(testOutDir, "empty.dat");
+      fs.writeFileSync(dest, "");
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => createMockArrayBuffer("new-content"),
+      } as unknown as Response);
+
+      const result = await downloadToFile("https://example.com/file.dat", dest, undefined, {
+        skipExisting: true,
+      });
+
+      expect(result).toBe(dest);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(fs.readFileSync(dest, "utf-8")).toBe("new-content");
+    });
+
+    test("downloadFullZip skips when output zip exists with size > 0", async () => {
+      const existingZip = path.join(testOutDir, "itemname-e.dat_140.zip");
+      fs.writeFileSync(existingZip, "cached-zip-content");
+      global.fetch = jest.fn();
+
+      const saved = await downloadFullZip("system/itemname-e.dat", {
+        version: "140",
+        outDir: testOutDir,
+        skipExisting: true,
+        config: { baseUrl: "https://cdn.example.com" },
+      });
+
+      expect(saved).toBe(existingZip);
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test("downloadPatch skips direct patch download when file exists with size > 0", async () => {
+      const existingPatch = path.join(testOutDir, "itemname-e.dat_140_to_142.patch");
+      fs.writeFileSync(existingPatch, "cached-patch-content");
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+      } as unknown as Response);
+
+      const result = await downloadPatch("system/itemname-e.dat", {
+        fromVersion: "140",
+        toVersion: "142",
+        outDir: testOutDir,
+        skipExisting: true,
+        config: { baseUrl: "https://cdn.example.com" },
+      });
+
+      expect(result.downloadedFiles[0]).toBe(existingPatch);
+      // Only 1 probe call for checking existence, no download fetch call
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test("downloadPatch skips incremental step patch when step file exists with size > 0", async () => {
+      const step1 = path.join(testOutDir, "itemname-e.dat_140_to_141.patch");
+      const step2 = path.join(testOutDir, "itemname-e.dat_141_to_142.patch");
+      fs.writeFileSync(step1, "cached-step-1");
+      fs.writeFileSync(step2, "cached-step-2");
+
+      global.fetch = jest
+        .fn()
+        // direct probe -> 404
+        .mockResolvedValueOnce({ ok: false, status: 404 } as unknown as Response)
+        // step 1 probe -> 200
+        .mockResolvedValueOnce({ ok: true, status: 200 } as unknown as Response)
+        // step 2 probe -> 200
+        .mockResolvedValueOnce({ ok: true, status: 200 } as unknown as Response);
+
+      const result = await downloadPatch("system/itemname-e.dat", {
+        fromVersion: "140",
+        toVersion: "142",
+        outDir: testOutDir,
+        skipExisting: true,
+        config: { baseUrl: "https://cdn.example.com" },
+      });
+
+      expect(result.strategy).toBe("incremental");
+      expect(result.downloadedFiles.length).toBe(2);
+      // 3 probe calls, but 0 download calls because both files exist
+      expect(global.fetch).toHaveBeenCalledTimes(3);
     });
   });
 });

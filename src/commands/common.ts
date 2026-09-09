@@ -34,6 +34,10 @@ export function buildConfigFromCli(
     undefined;
   const authToken =
     (cmdOpts.authToken as string) || (globalOpts.authToken as string) || undefined;
+  const maxRetriesStr =
+    (cmdOpts.retries as string) || (globalOpts.retries as string) || undefined;
+  const delayMsStr =
+    (cmdOpts.delay as string) || (globalOpts.delay as string) || undefined;
 
   return resolveConfig({
     baseUrl,
@@ -43,5 +47,7 @@ export function buildConfigFromCli(
     gameId,
     versionUrl,
     authToken,
+    maxRetries: maxRetriesStr ? parseInt(maxRetriesStr, 10) : undefined,
+    delayMs: delayMsStr ? parseInt(delayMsStr, 10) : undefined,
   });
 }
