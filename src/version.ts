@@ -1,13 +1,103 @@
+import * as net from "net";
 import { requireVersionUrl, resolveConfig } from "./config";
 import { PatchConfig, VersionInfo } from "./types";
 
 /**
+ * Queries the Lineage 2 updater server via its binary TCP protocol (Port 27500).
+ */
+export function queryUpdaterServer(
+  host: string,
+  port: number = 27500,
+  gameId: string = "LINEAGE2",
+  timeoutMs: number = 5000
+): Promise<{ version: string; manifestHash: string }> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      client.destroy();
+      reject(new Error(`Timeout querying updater server at ${host}:${port}`));
+    }, timeoutMs);
+
+    const client = net.createConnection({ host, port }, () => {
+      const gameBytes = Buffer.from(gameId, "ascii");
+      const reqLen = 4 + 2 + gameBytes.length;
+      const req = Buffer.from([
+        reqLen & 0xff,
+        (reqLen >> 8) & 0xff,
+        0x06,
+        0x00,
+        0x0a,
+        gameBytes.length,
+        ...gameBytes,
+      ]);
+      client.write(req);
+    });
+
+    client.on("data", (data: Buffer) => {
+      clearTimeout(timer);
+      client.end();
+      try {
+        const payload = data.subarray(8);
+        const tagIdx = payload.indexOf(0x20);
+        if (tagIdx === -1) {
+          throw new Error("Invalid response: missing version tag");
+        }
+        let byte = payload[tagIdx + 1];
+        let version = byte & 0x7f;
+        if (byte & 0x80) {
+          version |= (payload[tagIdx + 2] & 0x7f) << 7;
+        }
+
+        const hashTagIdx = payload.indexOf(0x52);
+        let manifestHash = "";
+        if (hashTagIdx !== -1) {
+          const hashLen = payload[hashTagIdx + 1];
+          manifestHash = payload
+            .subarray(hashTagIdx + 2, hashTagIdx + 2 + hashLen)
+            .toString("utf-8");
+        }
+
+        resolve({ version: String(version), manifestHash });
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    client.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+/**
  * Fetches and parses the current client patch version from the configured endpoint.
+ * Supports querying the TCP updater daemon (port 27500) or HTTP JSON / manifest endpoints.
  */
 export async function checkCurrentVersion(
   configOverrides?: PatchConfig
 ): Promise<VersionInfo> {
   const config = resolveConfig(configOverrides);
+
+  // If TCP updater host is configured, attempt socket query first
+  if (config.updaterHost) {
+    try {
+      const result = await queryUpdaterServer(
+        config.updaterHost,
+        config.updaterPort,
+        config.gameId
+      );
+      return {
+        version: result.version,
+        manifestHash: result.manifestHash,
+      };
+    } catch (err) {
+      if (!config.versionUrl) {
+        throw err;
+      }
+      // Fallback to HTTP endpoint if TCP query fails and versionUrl is available
+    }
+  }
+
   const versionUrl = requireVersionUrl(config);
 
   const headers: Record<string, string> = {

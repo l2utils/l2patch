@@ -52,6 +52,22 @@ export function resolveConfig(overrides?: PatchConfig): PatchConfig {
     process.env.L2_PATCH_BASE_URL ||
     undefined;
 
+  const updaterHost =
+    overrides?.updaterHost ||
+    process.env.L2_PATCH_UPDATER_HOST ||
+    undefined;
+
+  const updaterPort =
+    overrides?.updaterPort ||
+    (process.env.L2_PATCH_UPDATER_PORT
+      ? parseInt(process.env.L2_PATCH_UPDATER_PORT, 10)
+      : 27500);
+
+  const gameId =
+    overrides?.gameId ||
+    process.env.L2_PATCH_GAME_ID ||
+    "LINEAGE2";
+
   const versionUrl =
     overrides?.versionUrl ||
     process.env.L2_PATCH_VERSION_URL ||
@@ -65,12 +81,12 @@ export function resolveConfig(overrides?: PatchConfig): PatchConfig {
   const urlTemplate =
     overrides?.urlTemplate ||
     process.env.L2_PATCH_URL_TEMPLATE ||
-    "{baseUrl}/{version}/{filePath}.zip";
+    "{baseUrl}/{version}/Patch/Zip/{filePath}.zip";
 
   const patchUrlTemplate =
     overrides?.patchUrlTemplate ||
     process.env.L2_PATCH_DELTA_TEMPLATE ||
-    "{baseUrl}/patch/{fromVersion}_{toVersion}/{filePath}.patch";
+    "{baseUrl}/{toVersion}/Patch/{fromVersion}/{filePath}.dlt.zip";
 
   const updateArchiveTemplate =
     overrides?.updateArchiveTemplate ||
@@ -85,10 +101,13 @@ export function resolveConfig(overrides?: PatchConfig): PatchConfig {
   const manifestUrlTemplate =
     overrides?.manifestUrlTemplate ||
     process.env.L2_PATCH_MANIFEST_URL_TEMPLATE ||
-    "{baseUrl}/{version}/manifest.json";
+    "{baseUrl}/{version}/Patch/PatchFileInfo_{gameId}_{version}.dat";
 
   return {
     baseUrl,
+    updaterHost,
+    updaterPort,
+    gameId,
     versionUrl,
     authToken,
     urlTemplate,
@@ -114,14 +133,14 @@ export function requireBaseUrl(config: PatchConfig): string {
 }
 
 /**
- * Ensures that the required version URL is configured.
+ * Ensures that the required version URL or updater host is configured.
  */
 export function requireVersionUrl(config: PatchConfig): string {
-  if (!config.versionUrl) {
+  if (!config.versionUrl && !config.updaterHost) {
     throw new Error(
-      "Missing required L2_PATCH_VERSION_URL. Please set the L2_PATCH_VERSION_URL environment variable, " +
+      "Missing required L2_PATCH_VERSION_URL or L2_PATCH_UPDATER_HOST. Please set the environment variable, " +
         "configure the GitHub Organization Secret, or pass the --version-url option."
     );
   }
-  return config.versionUrl;
+  return config.versionUrl || "";
 }

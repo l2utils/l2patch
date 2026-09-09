@@ -1,6 +1,9 @@
 export interface PatchConfig {
   baseUrl?: string;
   versionUrl?: string;
+  updaterHost?: string;
+  updaterPort?: number;
+  gameId?: string;
   authToken?: string;
   urlTemplate?: string;
   patchUrlTemplate?: string;
@@ -11,6 +14,7 @@ export interface PatchConfig {
 
 export interface VersionInfo {
   version: string;
+  manifestHash?: string;
   timestamp?: string;
   raw?: unknown;
 }
