@@ -4,7 +4,8 @@ import {
   createCdnCommand,
   createDownloadCommand,
   createDownloadVersionCommand,
-  createManifestCommand,
+  createFileInfoMapCommand,
+  createPatchFileInfoCommand,
   createVersionCommand,
 } from "./commands";
 
@@ -48,9 +49,9 @@ program
 // Add individual commands using addCommand
 program.addCommand(createCdnCommand());
 program.addCommand(createVersionCommand());
-program.addCommand(createManifestCommand());
+program.addCommand(createFileInfoMapCommand());
+program.addCommand(createPatchFileInfoCommand());
 program.addCommand(createDownloadCommand());
 program.addCommand(createDownloadVersionCommand());
 
 program.parse(process.argv);
-

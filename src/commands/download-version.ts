@@ -23,6 +23,18 @@ export function createDownloadVersionCommand(): Command {
     .option("-p, --patch", "Download patch deltas instead of full zips", false)
     .option("-l, --latest", "Download the latest version automatically", true)
     .option("-m, --manifest <pathOrUrl>", "Path or URL to update manifest / filelist")
+    .option(
+      "--file-info-map <pathOrUrl>",
+      "Path or URL to FileInfoMap manifest / filelist"
+    )
+    .option(
+      "--patch-file-info <pathOrUrl>",
+      "Path or URL to PatchFileInfo manifest / filelist"
+    )
+    .option(
+      "--manifest-type <type>",
+      "Manifest type: 'filemap' (FileInfoMap) or 'patch' (PatchFileInfo)"
+    )
     .option("-c, --concurrency <number>", "Number of concurrent downloads", "4")
     .option(
       "-d, --delay <ms>",
@@ -53,6 +65,18 @@ export function createDownloadVersionCommand(): Command {
         const maxRetries = parseInt(cmdOpts.retries, 10);
         const skipExisting = Boolean(cmdOpts.skipExisting);
 
+        const manifestPathOrUrl =
+          cmdOpts.fileInfoMap || cmdOpts.patchFileInfo || cmdOpts.manifest;
+        let manifestType: "patch" | "filemap" | undefined =
+          cmdOpts.manifestType as "patch" | "filemap" | undefined;
+        if (!manifestType) {
+          if (cmdOpts.fileInfoMap) {
+            manifestType = "filemap";
+          } else if (cmdOpts.patchFileInfo) {
+            manifestType = "patch";
+          }
+        }
+
         const reporter = new BatchProgressReporter({
           stream: process.stderr,
           enabled: cmdOpts.progress,
@@ -73,7 +97,8 @@ export function createDownloadVersionCommand(): Command {
           const result = await downloadPatchUpdate({
             fromVersion: cmdOpts.from,
             toVersion,
-            manifestPathOrUrl: cmdOpts.manifest,
+            manifestPathOrUrl,
+            manifestType,
             concurrency,
             delayMs,
             maxRetries,
@@ -98,7 +123,8 @@ export function createDownloadVersionCommand(): Command {
           const result = await downloadUpdate({
             version: targetVersion,
             latest: cmdOpts.latest && !targetVersion,
-            manifestPathOrUrl: cmdOpts.manifest,
+            manifestPathOrUrl,
+            manifestType,
             concurrency,
             delayMs,
             maxRetries,

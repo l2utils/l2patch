@@ -4,6 +4,8 @@ import { Command } from "commander";
 import {
   createDownloadCommand,
   createDownloadVersionCommand,
+  createFileInfoMapCommand,
+  createPatchFileInfoCommand,
 } from "../src/commands";
 
 describe("CLI commands", () => {
@@ -169,6 +171,174 @@ describe("CLI commands", () => {
 
       const savedFile = path.join(testOutDir, "update_140.zip");
       expect(fs.existsSync(savedFile)).toBe(true);
+    });
+
+    test("accepts --file-info-map, --patch-file-info, and --manifest-type options", () => {
+      const cmd = createDownloadVersionCommand();
+      const optionNames = cmd.options.map((o) => o.name());
+      expect(optionNames).toContain("manifest");
+      expect(optionNames).toContain("file-info-map");
+      expect(optionNames).toContain("patch-file-info");
+      expect(optionNames).toContain("manifest-type");
+    });
+  });
+
+  describe("createFileInfoMapCommand", () => {
+    test("creates command with options and alias", () => {
+      const cmd = createFileInfoMapCommand();
+      expect(cmd.name()).toBe("file-info-map");
+      expect(cmd.aliases()).toContain("manifest");
+      const optionNames = cmd.options.map((o) => o.name());
+      expect(optionNames).toContain("version");
+      expect(optionNames).toContain("latest");
+      expect(optionNames).toContain("output");
+    });
+
+    test("downloads FileInfoMap to stdout", async () => {
+      const mockManifest = "dummy-file-info-map-data";
+      let capturedUrl = "";
+      global.fetch = jest.fn().mockImplementation(async (url: string) => {
+        capturedUrl = url;
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => String(mockManifest.length) },
+          arrayBuffer: async () => Uint8Array.from(Buffer.from(mockManifest)).buffer,
+        } as unknown as Response;
+      });
+
+      const stdoutChunks: string[] = [];
+      process.stdout.write = ((chunk: any) => {
+        stdoutChunks.push(chunk.toString());
+        return true;
+      }) as any;
+
+      const program = new Command();
+      program.option("--base-url <url>");
+      program.addCommand(createFileInfoMapCommand());
+
+      await program.parseAsync([
+        "node",
+        "l2patch",
+        "--base-url",
+        "https://cdn.example.com",
+        "file-info-map",
+        "-v",
+        "140",
+      ]);
+
+      expect(stdoutChunks.join("")).toBe("dummy-file-info-map-data");
+      expect(capturedUrl).toContain("FileInfoMap_140.dat");
+    });
+
+    test("downloads FileInfoMap to output file", async () => {
+      const mockManifest = "file-info-map-file-content";
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: { get: () => String(mockManifest.length) },
+        arrayBuffer: async () => Uint8Array.from(Buffer.from(mockManifest)).buffer,
+      } as unknown as Response);
+
+      const dest = path.join(testOutDir, "FileInfoMap_saved.dat");
+
+      const program = new Command();
+      program.option("--base-url <url>");
+      program.addCommand(createFileInfoMapCommand());
+
+      await program.parseAsync([
+        "node",
+        "l2patch",
+        "--base-url",
+        "https://cdn.example.com",
+        "file-info-map",
+        "-v",
+        "140",
+        "-o",
+        dest,
+      ]);
+
+      expect(fs.existsSync(dest)).toBe(true);
+      expect(fs.readFileSync(dest, "utf-8")).toBe("file-info-map-file-content");
+    });
+  });
+
+  describe("createPatchFileInfoCommand", () => {
+    test("creates command with options", () => {
+      const cmd = createPatchFileInfoCommand();
+      expect(cmd.name()).toBe("patch-file-info");
+      const optionNames = cmd.options.map((o) => o.name());
+      expect(optionNames).toContain("version");
+      expect(optionNames).toContain("latest");
+      expect(optionNames).toContain("output");
+    });
+
+    test("downloads PatchFileInfo to stdout", async () => {
+      const mockManifest = "dummy-patch-file-info-data";
+      let capturedUrl = "";
+      global.fetch = jest.fn().mockImplementation(async (url: string) => {
+        capturedUrl = url;
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => String(mockManifest.length) },
+          arrayBuffer: async () => Uint8Array.from(Buffer.from(mockManifest)).buffer,
+        } as unknown as Response;
+      });
+
+      const stdoutChunks: string[] = [];
+      process.stdout.write = ((chunk: any) => {
+        stdoutChunks.push(chunk.toString());
+        return true;
+      }) as any;
+
+      const program = new Command();
+      program.option("--base-url <url>");
+      program.addCommand(createPatchFileInfoCommand());
+
+      await program.parseAsync([
+        "node",
+        "l2patch",
+        "--base-url",
+        "https://cdn.example.com",
+        "patch-file-info",
+        "-v",
+        "140",
+      ]);
+
+      expect(stdoutChunks.join("")).toBe("dummy-patch-file-info-data");
+      expect(capturedUrl).toContain("PatchFileInfo_140.dat");
+    });
+
+    test("downloads PatchFileInfo to output file", async () => {
+      const mockManifest = "patch-file-info-file-content";
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: { get: () => String(mockManifest.length) },
+        arrayBuffer: async () => Uint8Array.from(Buffer.from(mockManifest)).buffer,
+      } as unknown as Response);
+
+      const dest = path.join(testOutDir, "PatchFileInfo_saved.dat");
+
+      const program = new Command();
+      program.option("--base-url <url>");
+      program.addCommand(createPatchFileInfoCommand());
+
+      await program.parseAsync([
+        "node",
+        "l2patch",
+        "--base-url",
+        "https://cdn.example.com",
+        "patch-file-info",
+        "-v",
+        "140",
+        "-o",
+        dest,
+      ]);
+
+      expect(fs.existsSync(dest)).toBe(true);
+      expect(fs.readFileSync(dest, "utf-8")).toBe("patch-file-info-file-content");
     });
   });
 });

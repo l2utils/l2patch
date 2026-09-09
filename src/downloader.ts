@@ -119,6 +119,26 @@ export function buildManifestUrl(
 }
 
 /**
+ * Builds the URL for downloading a FileInfoMap manifest.
+ */
+export function buildFileInfoMapUrl(
+  version: string,
+  config: PatchConfig
+): string {
+  return buildManifestUrl(version, config, "filemap");
+}
+
+/**
+ * Builds the URL for downloading a PatchFileInfo manifest.
+ */
+export function buildPatchFileInfoUrl(
+  version: string,
+  config: PatchConfig
+): string {
+  return buildManifestUrl(version, config, "patch");
+}
+
+/**
  * Canonical HTTP headers matching the official NCSoft Purple patch downloader (no User-Agent).
  */
 export const NC_CDN_HEADERS: Record<string, string> = {
@@ -628,6 +648,46 @@ export async function downloadManifest(
 }
 
 /**
+ * Fetches the FileInfoMap manifest for a given version as an in-memory Buffer.
+ */
+export async function fetchFileInfoMap(
+  version?: string,
+  options?: Omit<DownloadManifestOptions, "type">
+): Promise<Buffer> {
+  return fetchManifest(version, { ...options, type: "filemap" });
+}
+
+/**
+ * Fetches the PatchFileInfo manifest for a given version as an in-memory Buffer.
+ */
+export async function fetchPatchFileInfo(
+  version?: string,
+  options?: Omit<DownloadManifestOptions, "type">
+): Promise<Buffer> {
+  return fetchManifest(version, { ...options, type: "patch" });
+}
+
+/**
+ * Downloads the FileInfoMap manifest file for a given version (or latest).
+ */
+export async function downloadFileInfoMap(
+  version?: string,
+  options?: Omit<DownloadManifestOptions, "type">
+): Promise<string> {
+  return downloadManifest(version, { ...options, type: "filemap" });
+}
+
+/**
+ * Downloads the PatchFileInfo manifest file for a given version (or latest).
+ */
+export async function downloadPatchFileInfo(
+  version?: string,
+  options?: Omit<DownloadManifestOptions, "type">
+): Promise<string> {
+  return downloadManifest(version, { ...options, type: "patch" });
+}
+
+/**
  * Fetches a delta patch for a file between two versions as an in-memory Buffer.
  */
 export async function fetchPatch(
@@ -847,8 +907,10 @@ export async function downloadUpdate(
   // Resolve file list
   let files: string[] = options?.fileList || [];
   if (files.length === 0) {
+    const manifestType = options?.manifestType || "patch";
     const manifestSource =
-      options?.manifestPathOrUrl || buildManifestUrl(targetVersion, config);
+      options?.manifestPathOrUrl ||
+      buildManifestUrl(targetVersion, config, manifestType);
     files = await loadManifestFileList(manifestSource, config.authToken, retryOpts);
   }
 
@@ -1007,8 +1069,10 @@ export async function downloadPatchUpdate(
   // Resolve file list
   let files: string[] = options.fileList || [];
   if (files.length === 0) {
+    const manifestType = options.manifestType || "patch";
     const manifestSource =
-      options.manifestPathOrUrl || buildManifestUrl(toVersion, config);
+      options.manifestPathOrUrl ||
+      buildManifestUrl(toVersion, config, manifestType);
     files = await loadManifestFileList(manifestSource, config.authToken, retryOpts);
   }
 

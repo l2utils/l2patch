@@ -39,9 +39,9 @@ Because this repository is public, CDN URLs, updater endpoints, and game credent
 | :--- | :--- | :--- |
 | `L2_PATCH_UPDATER_HOST` | NCSoft updater TCP server host. | `cdn`, `version` (TCP mode) |
 | `L2_PATCH_UPDATER_PORT` | NCSoft updater TCP server port. | `cdn`, `version` (TCP mode) |
-| `L2_PATCH_GAME_ID` | Game service identifier (e.g. `LINEAGE2`). | `cdn`, `version` (TCP mode), `manifest` |
+| `L2_PATCH_GAME_ID` | Game service identifier (e.g. `LINEAGE2`). | `cdn`, `version` (TCP mode), `file-info-map`, `patch-file-info` |
 | `L2_PATCH_CDN_HOST` | Hostname of the patch CDN (e.g. `d35293xeakkyq4.cloudfront.net`). | Derives `baseUrl` |
-| `L2_PATCH_BASE_URL` | Base CDN URL where patch zips and deltas are served. | `download`, `manifest`, `download-version` |
+| `L2_PATCH_BASE_URL` | Base CDN URL where patch zips and deltas are served. | `download`, `file-info-map`, `patch-file-info`, `download-version` |
 | `L2_PATCH_VERSION` | Client patch version identifier. | Stored by `version --set-env` |
 | `L2_PATCH_VERSION_URL` | *(Optional)* URL of the version check endpoint or JSON manifest. | `version` (HTTP mode) |
 | `L2_PATCH_AUTH_TOKEN` | *(Optional)* Authorization bearer token or key for protected endpoints. | Any command |
@@ -83,22 +83,37 @@ npx l2patch version --set-env
 npx l2patch version --json
 ```
 
-### 3. Download Manifest
+### 3. Download FileInfoMap Manifest
 
-Downloads `PatchFileInfo` or `FileInfoMap` catalog and streams it directly to `stdout` (pipeable to a file or processor):
+Downloads `FileInfoMap` catalog (complete client file mapping) and streams it directly to `stdout`:
+
+```sh
+# Pipe FileInfoMap manifest for version 599 directly to a file
+npx l2patch file-info-map -v 599 > FileInfoMap_599.dat
+
+# Pipe FileInfoMap manifest for latest version
+npx l2patch file-info-map --latest > FileInfoMap.dat
+
+# Optionally save directly to a file via -o / --output
+npx l2patch file-info-map -v 599 -o ./manifests/FileInfoMap_599.dat
+```
+
+### 4. Download PatchFileInfo Manifest
+
+Downloads `PatchFileInfo` catalog (patch update delta and zip file catalog) and streams it directly to `stdout`:
 
 ```sh
 # Pipe PatchFileInfo manifest for version 599 directly to a file
-npx l2patch manifest -v 599 > PatchFileInfo_599.dat
+npx l2patch patch-file-info -v 599 > PatchFileInfo_599.dat
 
-# Pipe FileInfoMap manifest for latest version
-npx l2patch manifest --type filemap --latest > FileInfoMap.dat
+# Pipe PatchFileInfo manifest for latest version
+npx l2patch patch-file-info --latest > PatchFileInfo.dat
 
 # Optionally save directly to a file via -o / --output
-npx l2patch manifest -v 599 -o ./manifests/PatchFileInfo_599.dat
+npx l2patch patch-file-info -v 599 -o ./manifests/PatchFileInfo_599.dat
 ```
 
-### 4. Download Single File (Full Zip or Delta Patch)
+### 5. Download Single File (Full Zip or Delta Patch)
 
 Streams downloaded full file `.zip` or delta `.patch` directly to `stdout`:
 
@@ -116,14 +131,18 @@ npx l2patch download system/itemname-e.dat --patch --from 598 --to 599 > itemnam
 npx l2patch download system/itemname-e.dat -v 599 -o ./downloads/itemname-e.dat.zip
 ```
 
-### 5. Download Entire Patch Update (Full Zips or Delta Patches)
+### 6. Download Entire Patch Update (Full Zips or Delta Patches)
 
 ```sh
-# Download all full file zips for the latest update
+# Download all full file zips for the latest update using FileInfoMap
 npx l2patch download-version --latest --concurrency 6 --out-dir ./client
 
-# Download all delta patches from version 598 to 599
+# Download all delta patches from version 598 to 599 using PatchFileInfo
 npx l2patch download-version --patch --from 598 --to 599 --concurrency 6 --out-dir ./patches
+
+# Download using an explicit FileInfoMap or PatchFileInfo file
+npx l2patch download-version --file-info-map ./FileInfoMap.dat --out-dir ./client
+npx l2patch download-version --patch --from 598 --to 599 --patch-file-info ./PatchFileInfo.dat
 ```
 
 ---
@@ -135,10 +154,14 @@ import {
   queryCdnConfig,
   checkCurrentVersion,
   fetchFullZip,
-  fetchManifest,
+  fetchFileInfoMap,
+  fetchPatchFileInfo,
+  downloadFileInfoMap,
+  downloadPatchFileInfo,
   downloadFullZip,
   downloadPatch,
   downloadUpdate,
+  downloadPatchUpdate,
 } from "@l2utils/l2patch";
 
 // 1. Query active CDN
@@ -149,20 +172,28 @@ console.log(`CDN Host: ${cdn.cdnHost}, Base URL: ${cdn.baseUrl}`);
 const versionInfo = await checkCurrentVersion();
 console.log(`Current version: ${versionInfo.version}`);
 
-// 3. Fetch file as in-memory Buffer (no disk write)
+// 3. Fetch FileInfoMap or PatchFileInfo manifest
+const fileInfoMap = await fetchFileInfoMap(versionInfo.version, {
+  config: { baseUrl: cdn.baseUrl },
+});
+const patchFileInfo = await fetchPatchFileInfo(versionInfo.version, {
+  config: { baseUrl: cdn.baseUrl },
+});
+
+// 4. Fetch file as in-memory Buffer (no disk write)
 const buffer = await fetchFullZip("system/itemname-e.dat", {
   latest: true,
   config: { baseUrl: cdn.baseUrl },
 });
 
-// 4. Download full file zip to disk
+// 5. Download full file zip to disk
 const zipPath = await downloadFullZip("system/itemname-e.dat", {
   latest: true,
   outDir: "./downloads",
   config: { baseUrl: cdn.baseUrl },
 });
 
-// 4. Download delta patch
+// 6. Download delta patch
 const patchResult = await downloadPatch("system/itemname-e.dat", {
   fromVersion: "598",
   toVersion: "599",
