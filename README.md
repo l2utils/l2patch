@@ -85,27 +85,35 @@ npx l2patch version --json
 
 ### 3. Download Manifest
 
-Download `PatchFileInfo` or `FileInfoMap` catalog for a specific version or latest:
+Downloads `PatchFileInfo` or `FileInfoMap` catalog and streams it directly to `stdout` (pipeable to a file or processor):
 
 ```sh
-# Download PatchFileInfo manifest for version 599
-npx l2patch manifest -v 599 --out-dir ./manifests
+# Pipe PatchFileInfo manifest for version 599 directly to a file
+npx l2patch manifest -v 599 > PatchFileInfo_599.dat
 
-# Download FileInfoMap manifest for the latest version
-npx l2patch manifest --type filemap --latest --out-dir ./manifests
+# Pipe FileInfoMap manifest for latest version
+npx l2patch manifest --type filemap --latest > FileInfoMap.dat
+
+# Optionally save directly to a file via -o / --output
+npx l2patch manifest -v 599 -o ./manifests/PatchFileInfo_599.dat
 ```
 
 ### 4. Download Single File (Full Zip or Delta Patch)
 
+Streams downloaded full file `.zip` or delta `.patch` directly to `stdout`:
+
 ```sh
-# Download full zip for latest version
-npx l2patch download system/itemname-e.dat --latest --out-dir ./downloads
+# Download full zip for latest version and pipe to file
+npx l2patch download system/itemname-e.dat --latest > itemname-e.dat.zip
 
 # Download full zip for specific version
-npx l2patch download system/itemname-e.dat -v 599 --out-dir ./downloads
+npx l2patch download system/itemname-e.dat -v 599 > itemname-e.dat.zip
 
-# Download delta patch between version 598 and 599
-npx l2patch download system/itemname-e.dat --patch --from 598 --to 599 --out-dir ./patches
+# Download delta patch between version 598 and 599 and pipe to file
+npx l2patch download system/itemname-e.dat --patch --from 598 --to 599 > itemname-e.dat.patch
+
+# Optionally save directly to a file via -o / --output
+npx l2patch download system/itemname-e.dat -v 599 -o ./downloads/itemname-e.dat.zip
 ```
 
 ### 5. Download Entire Patch Update (Full Zips or Delta Patches)
@@ -126,20 +134,28 @@ npx l2patch download-version --patch --from 598 --to 599 --concurrency 6 --out-d
 import {
   queryCdnConfig,
   checkCurrentVersion,
+  fetchFullZip,
+  fetchManifest,
   downloadFullZip,
   downloadPatch,
   downloadUpdate,
 } from "@l2utils/l2patch";
 
 // 1. Query active CDN
-const cdn = await queryCdnConfig();
+const cdn = await queryCdnConfig("updater.nclauncher.ncsoft.com", 27500, "LINEAGE2");
 console.log(`CDN Host: ${cdn.cdnHost}, Base URL: ${cdn.baseUrl}`);
 
 // 2. Check current version
 const versionInfo = await checkCurrentVersion();
 console.log(`Current version: ${versionInfo.version}`);
 
-// 3. Download full file zip
+// 3. Fetch file as in-memory Buffer (no disk write)
+const buffer = await fetchFullZip("system/itemname-e.dat", {
+  latest: true,
+  config: { baseUrl: cdn.baseUrl },
+});
+
+// 4. Download full file zip to disk
 const zipPath = await downloadFullZip("system/itemname-e.dat", {
   latest: true,
   outDir: "./downloads",

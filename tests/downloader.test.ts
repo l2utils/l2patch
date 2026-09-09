@@ -9,8 +9,12 @@ import {
   downloadFullZip,
   downloadManifest,
   downloadPatch,
-  downloadUpdate,
   downloadPatchUpdate,
+  downloadToBuffer,
+  downloadUpdate,
+  fetchFullZip,
+  fetchManifest,
+  fetchPatch,
   loadManifestFileList,
   parseManifestFiles,
   probeUrl,
@@ -524,6 +528,132 @@ describe("downloader", () => {
           config: { baseUrl: "https://cdn.example.com" },
         })
       ).rejects.toThrow("Incremental patch step 100 -> 101 does not exist");
+    });
+  });
+
+  describe("fetch methods (in-memory buffer output)", () => {
+    test("fetchFullZip returns buffer with explicit version", async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => createMockArrayBuffer("PK-buffer-zip"),
+      } as unknown as Response);
+
+      const buffer = await fetchFullZip("system/test.dat", {
+        version: "140",
+        config: { baseUrl: "https://cdn.example.com" },
+      });
+
+      expect(Buffer.isBuffer(buffer)).toBe(true);
+      expect(buffer.toString()).toBe("PK-buffer-zip");
+    });
+
+    test("fetchFullZip resolves latest version automatically", async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          headers: new Headers({ "content-type": "application/json" }),
+          text: async () => JSON.stringify({ version: "150" }),
+        } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          arrayBuffer: async () => createMockArrayBuffer("PK-latest-buffer"),
+        } as unknown as Response);
+
+      const buffer = await fetchFullZip("system/test.dat", {
+        latest: true,
+        config: { baseUrl: "https://cdn.example.com" },
+      });
+
+      expect(buffer.toString()).toBe("PK-latest-buffer");
+    });
+
+    test("fetchManifest returns buffer", async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => createMockArrayBuffer("manifest-buffer"),
+      } as unknown as Response);
+
+      const buffer = await fetchManifest("140", {
+        config: { baseUrl: "https://cdn.example.com", gameId: "LINEAGE2" },
+      });
+
+      expect(buffer.toString()).toBe("manifest-buffer");
+    });
+
+    test("fetchManifest resolves latest version automatically", async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          headers: new Headers({ "content-type": "application/json" }),
+          text: async () => JSON.stringify({ version: "160" }),
+        } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          arrayBuffer: async () => createMockArrayBuffer("latest-manifest-buffer"),
+        } as unknown as Response);
+
+      const buffer = await fetchManifest(undefined, {
+        latest: true,
+        config: { baseUrl: "https://cdn.example.com", gameId: "LINEAGE2" },
+      });
+
+      expect(buffer.toString()).toBe("latest-manifest-buffer");
+    });
+
+    test("downloadManifest creates nested output directory if missing", async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => createMockArrayBuffer("nested manifest"),
+      } as unknown as Response);
+
+      const nestedDir = path.join(testOutDir, "nested", "manifests");
+      const saved = await downloadManifest("140", {
+        outDir: nestedDir,
+        config: { baseUrl: "https://cdn.example.com" },
+      });
+
+      expect(fs.existsSync(saved)).toBe(true);
+      expect(fs.readFileSync(saved, "utf-8")).toBe("nested manifest");
+    });
+
+    test("fetchPatch returns buffer when direct patch exists", async () => {
+      global.fetch = jest
+        .fn()
+        // HEAD probe
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+        } as unknown as Response)
+        // GET download
+        .mockResolvedValueOnce({
+          ok: true,
+          arrayBuffer: async () => createMockArrayBuffer("patch-buffer"),
+        } as unknown as Response);
+
+      const buffer = await fetchPatch("system/itemname-e.dat", {
+        fromVersion: "100",
+        toVersion: "105",
+        config: { baseUrl: "https://cdn.example.com" },
+      });
+
+      expect(buffer.toString()).toBe("patch-buffer");
+    });
+
+    test("fetchPatch throws when direct patch does not exist", async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+      } as unknown as Response);
+
+      await expect(
+        fetchPatch("system/itemname-e.dat", {
+          fromVersion: "100",
+          toVersion: "105",
+          config: { baseUrl: "https://cdn.example.com" },
+        })
+      ).rejects.toThrow("Direct patch delta between 100 and 105 not found");
     });
   });
 

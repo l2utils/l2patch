@@ -148,13 +148,12 @@ export async function probeUrl(
 }
 
 /**
- * Downloads a file from a URL to a local destination.
+ * Downloads a resource from a URL directly to an in-memory Buffer.
  */
-export async function downloadToFile(
+export async function downloadToBuffer(
   url: string,
-  destinationPath: string,
   authToken?: string
-): Promise<string> {
+): Promise<Buffer> {
   const headers: Record<string, string> = {
     "User-Agent": "l2patch/1.0.0",
   };
@@ -170,7 +169,18 @@ export async function downloadToFile(
   }
 
   const arrayBuffer = await response.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
+  return Buffer.from(arrayBuffer);
+}
+
+/**
+ * Downloads a file from a URL to a local destination.
+ */
+export async function downloadToFile(
+  url: string,
+  destinationPath: string,
+  authToken?: string
+): Promise<string> {
+  const buffer = await downloadToBuffer(url, authToken);
 
   const dir = path.dirname(destinationPath);
   if (!fs.existsSync(dir)) {
@@ -307,6 +317,25 @@ async function runWithConcurrency<T, R>(
 }
 
 /**
+ * Fetches a full zip of a specified file as an in-memory Buffer.
+ */
+export async function fetchFullZip(
+  filePath: string,
+  options?: DownloadFileOptions
+): Promise<Buffer> {
+  const config = resolveConfig(options?.config);
+
+  let targetVersion = options?.version;
+  if (options?.latest || !targetVersion) {
+    const latestInfo = await checkCurrentVersion(config);
+    targetVersion = latestInfo.version;
+  }
+
+  const url = buildFullZipUrl(filePath, targetVersion, config);
+  return downloadToBuffer(url, config.authToken);
+}
+
+/**
  * Downloads a full zip of a specified file for a given version (or latest).
  */
 export async function downloadFullZip(
@@ -321,12 +350,43 @@ export async function downloadFullZip(
     targetVersion = latestInfo.version;
   }
 
-  const url = buildFullZipUrl(filePath, targetVersion, config);
+  const buffer = await fetchFullZip(filePath, {
+    ...options,
+    version: targetVersion,
+    latest: false,
+  });
   const outDir = path.resolve(process.cwd(), options?.outDir || ".");
   const fileName = `${path.basename(filePath)}_${targetVersion}.zip`;
   const destination = path.join(outDir, fileName);
 
-  return downloadToFile(url, destination, config.authToken);
+  const dir = path.dirname(destination);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  fs.writeFileSync(destination, buffer);
+  return destination;
+}
+
+/**
+ * Fetches the manifest file for a given version as an in-memory Buffer.
+ */
+export async function fetchManifest(
+  version?: string,
+  options?: DownloadManifestOptions
+): Promise<Buffer> {
+  const config = resolveConfig(options?.config);
+  requireBaseUrl(config);
+
+  let targetVersion = version || options?.version;
+  if (options?.latest || !targetVersion) {
+    const latestInfo = await checkCurrentVersion(config);
+    targetVersion = latestInfo.version;
+  }
+
+  const type = options?.type || "patch";
+  const url = buildManifestUrl(targetVersion, config, type);
+  return downloadToBuffer(url, config.authToken);
 }
 
 /**
@@ -345,8 +405,12 @@ export async function downloadManifest(
     targetVersion = latestInfo.version;
   }
 
+  const buffer = await fetchManifest(targetVersion, {
+    ...options,
+    version: targetVersion,
+    latest: false,
+  });
   const type = options?.type || "patch";
-  const url = buildManifestUrl(targetVersion, config, type);
   const outDir = path.resolve(process.cwd(), options?.outDir || ".");
   const prefix = type === "filemap" ? "FileInfoMap" : "PatchFileInfo";
   const gameId = config.gameId;
@@ -355,7 +419,35 @@ export async function downloadManifest(
     : `${prefix}_${targetVersion}.dat`;
   const destination = path.join(outDir, fileName);
 
-  return downloadToFile(url, destination, config.authToken);
+  const dir = path.dirname(destination);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  fs.writeFileSync(destination, buffer);
+  return destination;
+}
+
+/**
+ * Fetches a delta patch for a file between two versions as an in-memory Buffer.
+ */
+export async function fetchPatch(
+  filePath: string,
+  options: PatchOptions
+): Promise<Buffer> {
+  const config = resolveConfig(options.config);
+  const { fromVersion, toVersion } = options;
+
+  const directUrl = buildPatchUrl(filePath, fromVersion, toVersion, config);
+  const directExists = await probeUrl(directUrl, config.authToken);
+
+  if (directExists) {
+    return downloadToBuffer(directUrl, config.authToken);
+  }
+
+  throw new Error(
+    `Direct patch delta between ${fromVersion} and ${toVersion} not found at ${directUrl}.`
+  );
 }
 
 /**
