@@ -22,6 +22,7 @@ describe("version", () => {
 
     test("extracts from version property", () => {
       expect(extractVersionFromJson({ version: "142" })).toBe("142");
+      expect(extractVersionFromJson({ version: 142 })).toBe("142");
     });
 
     test("extracts from patchVersion property", () => {
@@ -299,6 +300,23 @@ describe("version", () => {
       const result = await queryCdnConfig("updater.example.com", 27500, "LINEAGE2");
       expect(result.cdnHost).toBe("d35293xeakkyq4.cloudfront.net");
       expect(result.baseUrl).toBe("http://d35293xeakkyq4.cloudfront.net/LINEAGE2");
+
+      // Also verify call with default port & gameId
+      jest.spyOn(net, "createConnection").mockImplementationOnce((opts: any, cb: any) => {
+        process.nextTick(() => {
+          cb();
+          const cdnHost = "d35293xeakkyq4.cloudfront.net";
+          const buf = Buffer.concat([
+            Buffer.alloc(8),
+            Buffer.from([0x12, cdnHost.length]),
+            Buffer.from(cdnHost, "utf-8"),
+          ]);
+          mockSocket.emit("data", buf);
+        });
+        return mockSocket;
+      });
+      const defaultResult = await queryCdnConfig("updater.example.com");
+      expect(defaultResult.cdnHost).toBe("d35293xeakkyq4.cloudfront.net");
       jest.restoreAllMocks();
     });
 

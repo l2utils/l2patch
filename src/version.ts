@@ -73,7 +73,7 @@ export function queryUpdaterServer(
  * Queries the Lineage 2 updater server for the active CDN hostname (Opcode 0x0003: GetCdnConfig).
  */
 export function queryCdnConfig(
-  host: string = "updater.nclauncher.ncsoft.com",
+  host: string,
   port: number = 27500,
   gameId: string = "LINEAGE2",
   timeoutMs: number = 5000

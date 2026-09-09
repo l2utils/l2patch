@@ -41,11 +41,61 @@ export function loadDotEnv(envPath?: string): void {
 }
 
 /**
+ * Updates or appends KEY=VALUE pairs in a .env file.
+ */
+export function updateDotEnv(
+  entries: Record<string, string>,
+  envPath?: string
+): void {
+  const targetPath = envPath || path.resolve(process.cwd(), ".env");
+  let lines: string[] = [];
+  if (fs.existsSync(targetPath)) {
+    try {
+      lines = fs.readFileSync(targetPath, "utf-8").split(/\r?\n/);
+    } catch {
+      lines = [];
+    }
+  }
+
+  const keysToSet = new Set(Object.keys(entries));
+
+  // Update existing keys
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx !== -1) {
+      const key = trimmed.slice(0, eqIdx).trim();
+      if (keysToSet.has(key)) {
+        lines[i] = `${key}=${entries[key]}`;
+        keysToSet.delete(key);
+      }
+    }
+  }
+
+  // Append remaining keys
+  for (const key of keysToSet) {
+    lines.push(`${key}=${entries[key]}`);
+  }
+
+  const cleanContent = lines.join("\n").replace(/\n+$/, "") + "\n";
+  fs.writeFileSync(targetPath, cleanContent);
+}
+
+/**
  * Resolves the effective patch configuration from options, environment variables,
  * and .env files.
  */
-export function resolveConfig(overrides?: PatchConfig): PatchConfig {
-  loadDotEnv();
+export function resolveConfig(
+  overrides?: PatchConfig,
+  envPath?: string
+): PatchConfig {
+  if (process.env.NODE_ENV !== "test" || envPath) {
+    loadDotEnv(envPath);
+  }
 
   const cdnHost =
     overrides?.cdnHost ||
@@ -55,12 +105,14 @@ export function resolveConfig(overrides?: PatchConfig): PatchConfig {
   const gameId =
     overrides?.gameId ||
     process.env.L2_PATCH_GAME_ID ||
-    "LINEAGE2";
+    undefined;
 
   let baseUrl =
     overrides?.baseUrl ||
     process.env.L2_PATCH_BASE_URL ||
-    (cdnHost ? `http://${cdnHost.replace(/\/+$/, "")}/${gameId}` : undefined);
+    (cdnHost && gameId
+      ? `http://${cdnHost.replace(/\/+$/, "")}/${gameId}`
+      : undefined);
 
   const updaterHost =
     overrides?.updaterHost ||
@@ -71,7 +123,7 @@ export function resolveConfig(overrides?: PatchConfig): PatchConfig {
     overrides?.updaterPort ||
     (process.env.L2_PATCH_UPDATER_PORT
       ? parseInt(process.env.L2_PATCH_UPDATER_PORT, 10)
-      : 27500);
+      : undefined);
 
   const versionUrl =
     overrides?.versionUrl ||
@@ -106,7 +158,7 @@ export function resolveConfig(overrides?: PatchConfig): PatchConfig {
   const manifestUrlTemplate =
     overrides?.manifestUrlTemplate ||
     process.env.L2_PATCH_MANIFEST_URL_TEMPLATE ||
-    "{baseUrl}/{version}/Patch/PatchFileInfo_{gameId}_{version}.dat";
+    undefined;
 
   return {
     baseUrl,
@@ -125,14 +177,51 @@ export function resolveConfig(overrides?: PatchConfig): PatchConfig {
 }
 
 /**
+ * Ensures that the required updater host is configured.
+ */
+export function requireUpdaterHost(config: PatchConfig): string {
+  if (!config.updaterHost) {
+    throw new Error(
+      "Missing required L2_PATCH_UPDATER_HOST. Environment variable is undefined. Pass --updater-host or set L2_PATCH_UPDATER_HOST in .env."
+    );
+  }
+  return config.updaterHost;
+}
+
+/**
+ * Ensures that the required updater port is configured.
+ */
+export function requireUpdaterPort(config: PatchConfig): number {
+  if (!config.updaterPort) {
+    throw new Error(
+      "Missing required L2_PATCH_UPDATER_PORT. Environment variable is undefined. Pass --updater-port or set L2_PATCH_UPDATER_PORT in .env."
+    );
+  }
+  return config.updaterPort;
+}
+
+/**
+ * Ensures that the required game ID is configured.
+ */
+export function requireGameId(config: PatchConfig): string {
+  if (!config.gameId) {
+    throw new Error(
+      "Missing required L2_PATCH_GAME_ID. Environment variable is undefined. Pass --game-id or set L2_PATCH_GAME_ID in .env."
+    );
+  }
+  return config.gameId;
+}
+
+/**
  * Ensures that the required base URL is configured.
  * Throws a descriptive error if missing.
  */
 export function requireBaseUrl(config: PatchConfig): string {
   if (!config.baseUrl) {
     throw new Error(
-      "Missing required CDN configuration. Please provide --base-url or --cdn-host as a parameter, " +
-        "set L2_PATCH_BASE_URL in your .env file, or run 'l2patch cdn' to query the current CDN."
+      "Missing required CDN configuration. Environment variable L2_PATCH_BASE_URL is undefined. " +
+        "Please provide --base-url or --cdn-host as a parameter, set L2_PATCH_BASE_URL in your .env file, " +
+        "or run 'l2patch cdn --set-env' to query and set the current CDN."
     );
   }
   return config.baseUrl;
@@ -144,8 +233,8 @@ export function requireBaseUrl(config: PatchConfig): string {
 export function requireVersionUrl(config: PatchConfig): string {
   if (!config.versionUrl && !config.updaterHost) {
     throw new Error(
-      "Missing required L2_PATCH_VERSION_URL or L2_PATCH_UPDATER_HOST. Please set the environment variable, " +
-        "configure the GitHub Organization Secret, or pass the --version-url option."
+      "Missing required L2_PATCH_VERSION_URL or L2_PATCH_UPDATER_HOST. Environment variables are undefined. " +
+        "Please set L2_PATCH_UPDATER_HOST or L2_PATCH_VERSION_URL in your .env file, or pass --version-url."
     );
   }
   return config.versionUrl || "";
