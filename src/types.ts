@@ -25,12 +25,38 @@ export interface VersionInfo {
   raw?: unknown;
 }
 
+export interface FileDownloadProgress {
+  filePath?: string;
+  receivedBytes: number;
+  totalBytes?: number;
+  chunkSize?: number;
+}
+
+export type FileProgressCallback = (progress: FileDownloadProgress) => void;
+
+export interface ActiveFileDownload {
+  file: string;
+  receivedBytes: number;
+  totalBytes?: number;
+}
+
+export interface BatchDownloadProgress {
+  totalFiles: number;
+  completedFiles: number;
+  failedFiles: number;
+  activeFiles: ActiveFileDownload[];
+  latestCompletedFile?: string;
+}
+
+export type BatchProgressCallback = (progress: BatchDownloadProgress) => void;
+
 export interface DownloadFileOptions {
   version?: string;
   latest?: boolean;
   outDir?: string;
   extract?: boolean;
   config?: PatchConfig;
+  onProgress?: FileProgressCallback;
 }
 
 export interface DownloadManifestOptions {
@@ -39,6 +65,7 @@ export interface DownloadManifestOptions {
   type?: "patch" | "filemap";
   outDir?: string;
   config?: PatchConfig;
+  onProgress?: FileProgressCallback;
 }
 
 export interface PatchOptions {
@@ -46,6 +73,7 @@ export interface PatchOptions {
   toVersion: string;
   outDir?: string;
   config?: PatchConfig;
+  onProgress?: FileProgressCallback;
 }
 
 export interface PatchStep {
@@ -73,6 +101,8 @@ export interface UpdateDownloadOptions {
   fileList?: string[];
   concurrency?: number;
   config?: PatchConfig;
+  onProgress?: BatchProgressCallback;
+  onFileProgress?: FileProgressCallback;
 }
 
 export interface UpdatePatchOptions {
@@ -83,6 +113,8 @@ export interface UpdatePatchOptions {
   fileList?: string[];
   concurrency?: number;
   config?: PatchConfig;
+  onProgress?: BatchProgressCallback;
+  onFileProgress?: FileProgressCallback;
 }
 
 export interface BulkDownloadResult {

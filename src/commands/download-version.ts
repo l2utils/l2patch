@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { requireBaseUrl } from "../config";
 import { downloadPatchUpdate, downloadUpdate } from "../downloader";
+import { BatchProgressReporter } from "../progress";
 import { checkCurrentVersion } from "../version";
 import { buildConfigFromCli } from "./common";
 
@@ -24,12 +25,19 @@ export function createDownloadVersionCommand(): Command {
     .option("-m, --manifest <pathOrUrl>", "Path or URL to update manifest / filelist")
     .option("-c, --concurrency <number>", "Number of concurrent downloads", "4")
     .option("-o, --out-dir <dir>", "Directory where files will be saved", ".")
+    .option("--progress", "Display download progress")
+    .option("--no-progress", "Disable download progress")
     .action(async (cmdOpts, cmd) => {
       try {
         const config = buildConfigFromCli(cmd, cmdOpts);
         requireBaseUrl(config);
 
         const targetVersion = cmdOpts.to || cmdOpts.version;
+
+        const reporter = new BatchProgressReporter({
+          stream: process.stderr,
+          enabled: cmdOpts.progress,
+        });
 
         if (cmdOpts.patch) {
           if (!cmdOpts.from) {
@@ -50,7 +58,10 @@ export function createDownloadVersionCommand(): Command {
             concurrency: parseInt(cmdOpts.concurrency, 10),
             outDir: cmdOpts.outDir,
             config,
+            onProgress: (p) => reporter.update(p),
           });
+
+          reporter.finish();
 
           console.log(`Mode: ${result.mode}`);
           console.log(`Total files downloaded: ${result.downloadedFiles.length}`);
@@ -69,7 +80,11 @@ export function createDownloadVersionCommand(): Command {
             concurrency: parseInt(cmdOpts.concurrency, 10),
             outDir: cmdOpts.outDir,
             config,
+            onProgress: (p) => reporter.update(p),
           });
+
+          reporter.finish();
+
 
           console.log(`Mode: ${result.mode}`);
           console.log(

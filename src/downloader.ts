@@ -2,9 +2,12 @@ import * as fs from "fs";
 import * as path from "path";
 import { requireBaseUrl, resolveConfig } from "./config";
 import {
+  ActiveFileDownload,
   BulkDownloadResult,
   DownloadFileOptions,
   DownloadManifestOptions,
+  FileDownloadProgress,
+  FileProgressCallback,
   PatchConfig,
   PatchDownloadResult,
   PatchOptions,
@@ -12,6 +15,7 @@ import {
   UpdateDownloadOptions,
   UpdatePatchOptions,
 } from "./types";
+
 import { checkCurrentVersion } from "./version";
 
 /**
@@ -152,7 +156,8 @@ export async function probeUrl(
  */
 export async function downloadToBuffer(
   url: string,
-  authToken?: string
+  authToken?: string,
+  onProgress?: FileProgressCallback
 ): Promise<Buffer> {
   const headers: Record<string, string> = {
     "User-Agent": "l2patch/1.0.0",
@@ -168,8 +173,42 @@ export async function downloadToBuffer(
     );
   }
 
+  const contentLengthHeader = response.headers?.get("content-length");
+  const totalBytes = contentLengthHeader
+    ? parseInt(contentLengthHeader, 10)
+    : undefined;
+
+  // Stream reader chunk-by-chunk if available
+  if (response.body && typeof response.body.getReader === "function") {
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let receivedBytes = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        receivedBytes += value.length;
+        onProgress?.({
+          receivedBytes,
+          totalBytes,
+          chunkSize: value.length,
+        });
+      }
+    }
+    return Buffer.concat(chunks);
+  }
+
+  // Fallback for mocked or non-streaming responses
   const arrayBuffer = await response.arrayBuffer();
-  return Buffer.from(arrayBuffer);
+  const buffer = Buffer.from(arrayBuffer);
+  onProgress?.({
+    receivedBytes: buffer.length,
+    totalBytes: totalBytes ?? buffer.length,
+    chunkSize: buffer.length,
+  });
+  return buffer;
 }
 
 /**
@@ -178,9 +217,12 @@ export async function downloadToBuffer(
 export async function downloadToFile(
   url: string,
   destinationPath: string,
-  authToken?: string
+  authToken?: string,
+  onProgress?: FileProgressCallback
 ): Promise<string> {
-  const buffer = await downloadToBuffer(url, authToken);
+  const buffer = await downloadToBuffer(url, authToken, (p) => {
+    onProgress?.({ ...p, filePath: destinationPath });
+  });
 
   const dir = path.dirname(destinationPath);
   if (!fs.existsSync(dir)) {
@@ -190,6 +232,7 @@ export async function downloadToFile(
   fs.writeFileSync(destinationPath, buffer);
   return destinationPath;
 }
+
 
 /**
  * Parses a file list from a JSON or plain text manifest.
@@ -332,7 +375,10 @@ export async function fetchFullZip(
   }
 
   const url = buildFullZipUrl(filePath, targetVersion, config);
-  return downloadToBuffer(url, config.authToken);
+  const onProgress = options?.onProgress
+    ? (p: FileDownloadProgress) => options.onProgress!({ ...p, filePath })
+    : undefined;
+  return downloadToBuffer(url, config.authToken, onProgress);
 }
 
 /**
@@ -350,22 +396,15 @@ export async function downloadFullZip(
     targetVersion = latestInfo.version;
   }
 
-  const buffer = await fetchFullZip(filePath, {
-    ...options,
-    version: targetVersion,
-    latest: false,
-  });
   const outDir = path.resolve(process.cwd(), options?.outDir || ".");
   const fileName = `${path.basename(filePath)}_${targetVersion}.zip`;
   const destination = path.join(outDir, fileName);
 
-  const dir = path.dirname(destination);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-
-  fs.writeFileSync(destination, buffer);
-  return destination;
+  const url = buildFullZipUrl(filePath, targetVersion, config);
+  const onProgress = options?.onProgress
+    ? (p: FileDownloadProgress) => options.onProgress!({ ...p, filePath })
+    : undefined;
+  return downloadToFile(url, destination, config.authToken, onProgress);
 }
 
 /**
@@ -386,7 +425,7 @@ export async function fetchManifest(
 
   const type = options?.type || "patch";
   const url = buildManifestUrl(targetVersion, config, type);
-  return downloadToBuffer(url, config.authToken);
+  return downloadToBuffer(url, config.authToken, options?.onProgress);
 }
 
 /**
@@ -405,11 +444,6 @@ export async function downloadManifest(
     targetVersion = latestInfo.version;
   }
 
-  const buffer = await fetchManifest(targetVersion, {
-    ...options,
-    version: targetVersion,
-    latest: false,
-  });
   const type = options?.type || "patch";
   const outDir = path.resolve(process.cwd(), options?.outDir || ".");
   const prefix = type === "filemap" ? "FileInfoMap" : "PatchFileInfo";
@@ -419,13 +453,8 @@ export async function downloadManifest(
     : `${prefix}_${targetVersion}.dat`;
   const destination = path.join(outDir, fileName);
 
-  const dir = path.dirname(destination);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-
-  fs.writeFileSync(destination, buffer);
-  return destination;
+  const url = buildManifestUrl(targetVersion, config, type);
+  return downloadToFile(url, destination, config.authToken, options?.onProgress);
 }
 
 /**
@@ -442,7 +471,10 @@ export async function fetchPatch(
   const directExists = await probeUrl(directUrl, config.authToken);
 
   if (directExists) {
-    return downloadToBuffer(directUrl, config.authToken);
+    const onProgress = options?.onProgress
+      ? (p: FileDownloadProgress) => options.onProgress!({ ...p, filePath })
+      : undefined;
+    return downloadToBuffer(directUrl, config.authToken, onProgress);
   }
 
   throw new Error(
@@ -463,6 +495,9 @@ export async function downloadPatch(
   const outDir = path.resolve(process.cwd(), options.outDir || ".");
 
   const { fromVersion, toVersion } = options;
+  const onProgress = options?.onProgress
+    ? (p: FileDownloadProgress) => options.onProgress!({ ...p, filePath })
+    : undefined;
 
   // 1. Probe for direct N -> M patch
   const directUrl = buildPatchUrl(filePath, fromVersion, toVersion, config);
@@ -471,7 +506,7 @@ export async function downloadPatch(
   if (directExists) {
     const fileName = `${path.basename(filePath)}_${fromVersion}_to_${toVersion}.patch`;
     const destination = path.join(outDir, fileName);
-    const savedPath = await downloadToFile(directUrl, destination, config.authToken);
+    const savedPath = await downloadToFile(directUrl, destination, config.authToken, onProgress);
 
     return {
       filePath,
@@ -519,7 +554,7 @@ export async function downloadPatch(
 
     const fileName = `${path.basename(filePath)}_${current}_to_${next}.patch`;
     const destination = path.join(outDir, fileName);
-    const savedPath = await downloadToFile(stepUrl, destination, config.authToken);
+    const savedPath = await downloadToFile(stepUrl, destination, config.authToken, onProgress);
 
     steps.push({
       from: String(current),
@@ -566,7 +601,39 @@ export async function downloadUpdate(
     if (archiveExists) {
       const fileName = `update_${targetVersion}.zip`;
       const destination = path.join(outDir, fileName);
-      const savedPath = await downloadToFile(archiveUrl, destination, config.authToken);
+      options?.onProgress?.({
+        totalFiles: 1,
+        completedFiles: 0,
+        failedFiles: 0,
+        activeFiles: [{ file: fileName, receivedBytes: 0 }],
+      });
+      const savedPath = await downloadToFile(
+        archiveUrl,
+        destination,
+        config.authToken,
+        (p) => {
+          options?.onFileProgress?.({ ...p, filePath: fileName });
+          options?.onProgress?.({
+            totalFiles: 1,
+            completedFiles: 0,
+            failedFiles: 0,
+            activeFiles: [
+              {
+                file: fileName,
+                receivedBytes: p.receivedBytes,
+                totalBytes: p.totalBytes,
+              },
+            ],
+          });
+        }
+      );
+      options?.onProgress?.({
+        totalFiles: 1,
+        completedFiles: 1,
+        failedFiles: 0,
+        activeFiles: [],
+        latestCompletedFile: fileName,
+      });
       return {
         version: targetVersion,
         mode: "archive",
@@ -594,16 +661,56 @@ export async function downloadUpdate(
   const downloadedFiles: string[] = [];
   const failedFiles: { file: string; error: string }[] = [];
 
+  const activeMap = new Map<string, { receivedBytes: number; totalBytes?: number }>();
+  let completedCount = 0;
+  let failedCount = 0;
+
+  const notifyProgress = (latestCompleted?: string) => {
+    if (!options?.onProgress) return;
+    const activeFiles: ActiveFileDownload[] = [];
+    for (const [file, info] of activeMap.entries()) {
+      activeFiles.push({
+        file,
+        receivedBytes: info.receivedBytes,
+        totalBytes: info.totalBytes,
+      });
+    }
+    options.onProgress({
+      totalFiles: files.length,
+      completedFiles: completedCount,
+      failedFiles: failedCount,
+      activeFiles,
+      latestCompletedFile: latestCompleted,
+    });
+  };
+
+  notifyProgress();
+
   await runWithConcurrency(files, concurrency, async (file) => {
+    activeMap.set(file, { receivedBytes: 0 });
+    notifyProgress();
     try {
       const saved = await downloadFullZip(file, {
         version: targetVersion,
         outDir,
         config,
+        onProgress: (p) => {
+          activeMap.set(file, {
+            receivedBytes: p.receivedBytes,
+            totalBytes: p.totalBytes,
+          });
+          options?.onFileProgress?.(p);
+          notifyProgress();
+        },
       });
       downloadedFiles.push(saved);
+      completedCount++;
     } catch (err) {
       failedFiles.push({ file, error: (err as Error).message });
+      failedCount++;
+    } finally {
+      activeMap.delete(file);
+      notifyProgress(file);
     }
   });
 
@@ -636,7 +743,39 @@ export async function downloadPatchUpdate(
     if (archiveExists) {
       const fileName = `patch_${fromVersion}_to_${toVersion}.zip`;
       const destination = path.join(outDir, fileName);
-      const savedPath = await downloadToFile(archiveUrl, destination, config.authToken);
+      options?.onProgress?.({
+        totalFiles: 1,
+        completedFiles: 0,
+        failedFiles: 0,
+        activeFiles: [{ file: fileName, receivedBytes: 0 }],
+      });
+      const savedPath = await downloadToFile(
+        archiveUrl,
+        destination,
+        config.authToken,
+        (p) => {
+          options?.onFileProgress?.({ ...p, filePath: fileName });
+          options?.onProgress?.({
+            totalFiles: 1,
+            completedFiles: 0,
+            failedFiles: 0,
+            activeFiles: [
+              {
+                file: fileName,
+                receivedBytes: p.receivedBytes,
+                totalBytes: p.totalBytes,
+              },
+            ],
+          });
+        }
+      );
+      options?.onProgress?.({
+        totalFiles: 1,
+        completedFiles: 1,
+        failedFiles: 0,
+        activeFiles: [],
+        latestCompletedFile: fileName,
+      });
       return {
         fromVersion,
         toVersion,
@@ -665,17 +804,57 @@ export async function downloadPatchUpdate(
   const downloadedFiles: string[] = [];
   const failedFiles: { file: string; error: string }[] = [];
 
+  const activeMap = new Map<string, { receivedBytes: number; totalBytes?: number }>();
+  let completedCount = 0;
+  let failedCount = 0;
+
+  const notifyProgress = (latestCompleted?: string) => {
+    if (!options?.onProgress) return;
+    const activeFiles: ActiveFileDownload[] = [];
+    for (const [file, info] of activeMap.entries()) {
+      activeFiles.push({
+        file,
+        receivedBytes: info.receivedBytes,
+        totalBytes: info.totalBytes,
+      });
+    }
+    options.onProgress({
+      totalFiles: files.length,
+      completedFiles: completedCount,
+      failedFiles: failedCount,
+      activeFiles,
+      latestCompletedFile: latestCompleted,
+    });
+  };
+
+  notifyProgress();
+
   await runWithConcurrency(files, concurrency, async (file) => {
+    activeMap.set(file, { receivedBytes: 0 });
+    notifyProgress();
     try {
       const result = await downloadPatch(file, {
         fromVersion,
         toVersion,
         outDir,
         config,
+        onProgress: (p) => {
+          activeMap.set(file, {
+            receivedBytes: p.receivedBytes,
+            totalBytes: p.totalBytes,
+          });
+          options?.onFileProgress?.(p);
+          notifyProgress();
+        },
       });
       downloadedFiles.push(...result.downloadedFiles);
+      completedCount++;
     } catch (err) {
       failedFiles.push({ file, error: (err as Error).message });
+      failedCount++;
+    } finally {
+      activeMap.delete(file);
+      notifyProgress(file);
     }
   });
 

@@ -3,8 +3,10 @@ import * as path from "path";
 import { Command } from "commander";
 import { requireBaseUrl } from "../config";
 import { fetchFullZip, fetchPatch } from "../downloader";
+import { FileProgressReporter } from "../progress";
 import { checkCurrentVersion } from "../version";
 import { buildConfigFromCli } from "./common";
+
 
 /**
  * Creates the `download` command for the commander program.
@@ -30,12 +32,20 @@ export function createDownloadCommand(): Command {
       "-o, --output <file>",
       "Save to a file instead of streaming to stdout"
     )
+    .option("--progress", "Display download progress")
+    .option("--no-progress", "Disable download progress")
     .action(async (filePath, cmdOpts, cmd) => {
       try {
         const config = buildConfigFromCli(cmd, cmdOpts);
         requireBaseUrl(config);
 
         const targetVersion = cmdOpts.to || cmdOpts.version;
+
+        const reporter = new FileProgressReporter({
+          stream: process.stderr,
+          enabled: cmdOpts.progress,
+          label: filePath,
+        });
 
         let buffer: Buffer;
         if (cmdOpts.patch) {
@@ -54,14 +64,19 @@ export function createDownloadCommand(): Command {
             fromVersion: cmdOpts.from,
             toVersion,
             config,
+            onProgress: (p) => reporter.update(p),
           });
         } else {
           buffer = await fetchFullZip(filePath, {
             version: targetVersion,
             latest: cmdOpts.latest && !targetVersion,
             config,
+            onProgress: (p) => reporter.update(p),
           });
         }
+
+        reporter.finish();
+
 
         if (cmdOpts.output) {
           const dest = path.resolve(process.cwd(), cmdOpts.output);
