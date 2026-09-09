@@ -12,6 +12,7 @@ describe("index exports", () => {
     expect(typeof l2patch.buildUpdateArchiveUrl).toBe("function");
     expect(typeof l2patch.buildPatchArchiveUrl).toBe("function");
     expect(typeof l2patch.buildManifestUrl).toBe("function");
+    expect(typeof l2patch.queryCdnConfig).toBe("function");
     expect(typeof l2patch.probeUrl).toBe("function");
     expect(typeof l2patch.resolveConfig).toBe("function");
   });

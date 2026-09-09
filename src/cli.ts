@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { checkCurrentVersion } from "./version";
+import { checkCurrentVersion, queryCdnConfig } from "./version";
 import {
   downloadFullZip,
   downloadPatch,
@@ -19,6 +19,7 @@ program
 // Global options that apply across commands
 program
   .option("--base-url <url>", "Base URL of the patch server / CDN")
+  .option("--cdn-host <host>", "CDN Host of the patch server (e.g. d35293xeakkyq4.cloudfront.net)")
   .option("--version-url <url>", "URL of the version check endpoint or manifest")
   .option("--auth-token <token>", "Authorization token for protected endpoints");
 
@@ -26,10 +27,40 @@ function buildConfigFromCli(opts: Record<string, unknown>): PatchConfig {
   const globalOpts = program.opts();
   return {
     baseUrl: (opts.baseUrl as string) || (globalOpts.baseUrl as string) || undefined,
+    cdnHost: (opts.cdnHost as string) || (globalOpts.cdnHost as string) || undefined,
     versionUrl: (opts.versionUrl as string) || (globalOpts.versionUrl as string) || undefined,
     authToken: (opts.authToken as string) || (globalOpts.authToken as string) || undefined,
   };
 }
+
+// 0. query current CDN host and base URL
+program
+  .command("cdn")
+  .description("Query the active CDN host and base URL from the updater server (Opcode 0x0003)")
+  .option("--json", "Output CDN configuration as JSON")
+  .option("--env", "Output formatted as .env variable (L2_PATCH_BASE_URL=...)")
+  .action(async (cmdOpts) => {
+    try {
+      const config = buildConfigFromCli(cmdOpts);
+      const host = config.updaterHost || process.env.L2_PATCH_UPDATER_HOST || "updater.nclauncher.ncsoft.com";
+      const port = config.updaterPort || 27500;
+      const gameId = config.gameId || "LINEAGE2";
+
+      const cdnInfo = await queryCdnConfig(host, port, gameId);
+      if (cmdOpts.json) {
+        console.log(JSON.stringify(cdnInfo, null, 2));
+      } else if (cmdOpts.env) {
+        console.log(`L2_PATCH_BASE_URL=${cdnInfo.baseUrl}`);
+        console.log(`L2_PATCH_CDN_HOST=${cdnInfo.cdnHost}`);
+      } else {
+        console.log(`Active CDN Host: ${cdnInfo.cdnHost}`);
+        console.log(`Base URL: ${cdnInfo.baseUrl}`);
+      }
+    } catch (err) {
+      console.error(`Error querying CDN config: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
 
 // 1. check for current version
 program

@@ -53,9 +53,16 @@ describe("config", () => {
     expect(config.baseUrl).toBe("https://override.example.com");
   });
 
+  test("derives baseUrl when cdnHost is configured", () => {
+    process.env.L2_PATCH_CDN_HOST = "d35293xeakkyq4.cloudfront.net";
+    const config = resolveConfig();
+    expect(config.cdnHost).toBe("d35293xeakkyq4.cloudfront.net");
+    expect(config.baseUrl).toBe("http://d35293xeakkyq4.cloudfront.net/LINEAGE2");
+  });
+
   test("requireBaseUrl throws when baseUrl is missing", () => {
     const config = resolveConfig();
-    expect(() => requireBaseUrl(config)).toThrow("Missing required L2_PATCH_BASE_URL");
+    expect(() => requireBaseUrl(config)).toThrow("Missing required CDN configuration");
   });
 
   test("requireBaseUrl returns baseUrl when set", () => {

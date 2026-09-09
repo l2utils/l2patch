@@ -47,10 +47,20 @@ export function loadDotEnv(envPath?: string): void {
 export function resolveConfig(overrides?: PatchConfig): PatchConfig {
   loadDotEnv();
 
-  const baseUrl =
+  const cdnHost =
+    overrides?.cdnHost ||
+    process.env.L2_PATCH_CDN_HOST ||
+    undefined;
+
+  const gameId =
+    overrides?.gameId ||
+    process.env.L2_PATCH_GAME_ID ||
+    "LINEAGE2";
+
+  let baseUrl =
     overrides?.baseUrl ||
     process.env.L2_PATCH_BASE_URL ||
-    undefined;
+    (cdnHost ? `http://${cdnHost.replace(/\/+$/, "")}/${gameId}` : undefined);
 
   const updaterHost =
     overrides?.updaterHost ||
@@ -62,11 +72,6 @@ export function resolveConfig(overrides?: PatchConfig): PatchConfig {
     (process.env.L2_PATCH_UPDATER_PORT
       ? parseInt(process.env.L2_PATCH_UPDATER_PORT, 10)
       : 27500);
-
-  const gameId =
-    overrides?.gameId ||
-    process.env.L2_PATCH_GAME_ID ||
-    "LINEAGE2";
 
   const versionUrl =
     overrides?.versionUrl ||
@@ -105,6 +110,7 @@ export function resolveConfig(overrides?: PatchConfig): PatchConfig {
 
   return {
     baseUrl,
+    cdnHost,
     updaterHost,
     updaterPort,
     gameId,
@@ -125,8 +131,8 @@ export function resolveConfig(overrides?: PatchConfig): PatchConfig {
 export function requireBaseUrl(config: PatchConfig): string {
   if (!config.baseUrl) {
     throw new Error(
-      "Missing required L2_PATCH_BASE_URL. Please set the L2_PATCH_BASE_URL environment variable, " +
-        "configure the GitHub Organization Secret, or pass the --base-url option."
+      "Missing required CDN configuration. Please provide --base-url or --cdn-host as a parameter, " +
+        "set L2_PATCH_BASE_URL in your .env file, or run 'l2patch cdn' to query the current CDN."
     );
   }
   return config.baseUrl;

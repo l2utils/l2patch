@@ -70,6 +70,64 @@ export function queryUpdaterServer(
 }
 
 /**
+ * Queries the Lineage 2 updater server for the active CDN hostname (Opcode 0x0003: GetCdnConfig).
+ */
+export function queryCdnConfig(
+  host: string = "updater.nclauncher.ncsoft.com",
+  port: number = 27500,
+  gameId: string = "LINEAGE2",
+  timeoutMs: number = 5000
+): Promise<{ cdnHost: string; baseUrl: string }> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      client.destroy();
+      reject(new Error(`Timeout querying CDN config from ${host}:${port}`));
+    }, timeoutMs);
+
+    const client = net.createConnection({ host, port }, () => {
+      const gameBytes = Buffer.from(gameId, "ascii");
+      const reqLen = 4 + 2 + gameBytes.length;
+      const req = Buffer.from([
+        reqLen & 0xff,
+        (reqLen >> 8) & 0xff,
+        0x03, // Opcode 0x0003 GetCdnConfig
+        0x00,
+        0x0a,
+        gameBytes.length,
+        ...gameBytes,
+      ]);
+      client.write(req);
+    });
+
+    client.on("data", (data: Buffer) => {
+      clearTimeout(timer);
+      client.end();
+      try {
+        const payload = data.subarray(8);
+        const tagIdx = payload.indexOf(0x12); // Tag 2 (0x12) length-delimited string
+        if (tagIdx === -1) {
+          throw new Error("Invalid response: missing CDN host tag (0x12)");
+        }
+        const strLen = payload[tagIdx + 1];
+        const cdnHost = payload
+          .subarray(tagIdx + 2, tagIdx + 2 + strLen)
+          .toString("utf-8");
+
+        const baseUrl = `http://${cdnHost.replace(/\/+$/, "")}/${gameId}`;
+        resolve({ cdnHost, baseUrl });
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    client.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+/**
  * Fetches and parses the current client patch version from the configured endpoint.
  * Supports querying the TCP updater daemon (port 27500) or HTTP JSON / manifest endpoints.
  */
