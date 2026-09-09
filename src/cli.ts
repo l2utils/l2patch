@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import * as fs from "fs";
+import * as path from "path";
 import { Command } from "commander";
 import {
   requireBaseUrl,
@@ -15,6 +17,9 @@ import {
   downloadPatch,
   downloadPatchUpdate,
   downloadUpdate,
+  fetchFullZip,
+  fetchManifest,
+  fetchPatch,
 } from "./downloader";
 import { PatchConfig } from "./types";
 import { checkCurrentVersion, queryCdnConfig } from "./version";
@@ -157,7 +162,7 @@ program
 // 3. Download manifest for a specific version
 program
   .command("manifest")
-  .description("Download manifest for a specific version (or latest)")
+  .description("Download manifest for a specific version (or latest) and output to stdout")
   .option("-v, --version <version>", "Target version to download manifest for")
   .option(
     "-l, --latest",
@@ -170,22 +175,30 @@ program
     "patch"
   )
   .option(
-    "-o, --out-dir <dir>",
-    "Directory where the downloaded manifest will be saved",
-    "."
+    "-o, --output <file>",
+    "Save to a file instead of streaming to stdout"
   )
   .action(async (cmdOpts) => {
     try {
       const config = buildConfigFromCli(cmdOpts);
       requireBaseUrl(config);
 
-      const savedPath = await downloadManifest(cmdOpts.version, {
+      const buffer = await fetchManifest(cmdOpts.version, {
         latest: cmdOpts.latest && !cmdOpts.version,
         type: cmdOpts.type as "patch" | "filemap",
-        outDir: cmdOpts.outDir,
         config,
       });
-      console.log(savedPath);
+
+      if (cmdOpts.output) {
+        const dest = path.resolve(process.cwd(), cmdOpts.output);
+        const dir = path.dirname(dest);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(dest, buffer);
+      } else {
+        process.stdout.write(buffer);
+      }
     } catch (err) {
       console.error(`Error downloading manifest: ${(err as Error).message}`);
       process.exit(1);
@@ -196,7 +209,7 @@ program
 program
   .command("download")
   .description(
-    "Download full zip or patch delta of a single client file"
+    "Download full zip or patch delta of a single client file and output to stdout"
   )
   .argument(
     "<filePath>",
@@ -211,9 +224,8 @@ program
   .option("-p, --patch", "Download patch delta instead of full zip", false)
   .option("-l, --latest", "Download the latest version automatically", true)
   .option(
-    "-o, --out-dir <dir>",
-    "Directory where the downloaded file will be saved",
-    "."
+    "-o, --output <file>",
+    "Save to a file instead of streaming to stdout"
   )
   .action(async (filePath, cmdOpts) => {
     try {
@@ -222,6 +234,7 @@ program
 
       const targetVersion = cmdOpts.to || cmdOpts.version;
 
+      let buffer: Buffer;
       if (cmdOpts.patch) {
         if (!cmdOpts.from) {
           throw new Error(
@@ -234,24 +247,28 @@ program
           toVersion = latestInfo.version;
         }
 
-        const result = await downloadPatch(filePath, {
+        buffer = await fetchPatch(filePath, {
           fromVersion: cmdOpts.from,
           toVersion,
-          outDir: cmdOpts.outDir,
           config,
         });
-
-        for (const file of result.downloadedFiles) {
-          console.log(file);
-        }
       } else {
-        const savedPath = await downloadFullZip(filePath, {
+        buffer = await fetchFullZip(filePath, {
           version: targetVersion,
           latest: cmdOpts.latest && !targetVersion,
-          outDir: cmdOpts.outDir,
           config,
         });
-        console.log(savedPath);
+      }
+
+      if (cmdOpts.output) {
+        const dest = path.resolve(process.cwd(), cmdOpts.output);
+        const dir = path.dirname(dest);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        fs.writeFileSync(dest, buffer);
+      } else {
+        process.stdout.write(buffer);
       }
     } catch (err) {
       console.error(`Error downloading: ${(err as Error).message}`);
