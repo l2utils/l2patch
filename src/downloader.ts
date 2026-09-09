@@ -204,7 +204,23 @@ export function parseManifestFiles(manifestContent: string): string[] {
   return trimmed
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("#") && !line.startsWith("["));
+    .filter((line) => line && !line.startsWith("#") && !line.startsWith("["))
+    .map((line) => {
+      let candidate = line.includes(":") ? line.split(":")[0].trim() : line;
+      candidate = candidate.replace(/\\/g, "/");
+      if (candidate.startsWith("Zip/")) {
+        candidate = candidate.slice(4);
+      } else if (/^\d+\//.test(candidate)) {
+        candidate = candidate.replace(/^\d+\//, "");
+      }
+      if (candidate.endsWith(".dlt.zip")) {
+        candidate = candidate.slice(0, -8);
+      } else if (candidate.endsWith(".zip")) {
+        candidate = candidate.slice(0, -4);
+      }
+      return candidate;
+    })
+    .filter(Boolean);
 }
 
 /**
@@ -230,7 +246,13 @@ export async function loadManifestFileList(
         `Failed to fetch manifest from ${manifestPathOrUrl}: ${resp.status} ${resp.statusText}`
       );
     }
-    const text = await resp.text();
+    const buffer = resp.arrayBuffer
+      ? Buffer.from(await resp.arrayBuffer())
+      : Buffer.from(await resp.text());
+    const text =
+      buffer[0] === 0xff && buffer[1] === 0xfe
+        ? buffer.toString("utf16le")
+        : buffer.toString("utf-8");
     return parseManifestFiles(text);
   }
 
@@ -238,7 +260,11 @@ export async function loadManifestFileList(
   if (!fs.existsSync(resolved)) {
     throw new Error(`Manifest file not found: ${resolved}`);
   }
-  const text = fs.readFileSync(resolved, "utf-8");
+  const buffer = fs.readFileSync(resolved);
+  const text =
+    buffer[0] === 0xff && buffer[1] === 0xfe
+      ? buffer.toString("utf16le")
+      : buffer.toString("utf-8");
   return parseManifestFiles(text);
 }
 

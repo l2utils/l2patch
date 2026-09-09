@@ -83,9 +83,46 @@ describe("downloader", () => {
       ]);
     });
 
-    test("parses plain text line list", () => {
-      const txt = "# Comments\nsystem/a.dat\n\nsystem/b.dat\n";
-      expect(parseManifestFiles(txt)).toEqual(["system/a.dat", "system/b.dat"]);
+    test("parses Lineage 2 colon-delimited FileInfoMap and PatchFileInfo lines", () => {
+      const txt = [
+        "Zip\\system\\ItemName_Classic-e.dat.zip:469599:7b05db:1",
+        "598\\system\\Skillgrp.dat.dlt.zip:14812:b36142:3",
+        "system\\item_baseinfo_ClassicAden.dat:1260389:e894c0:0",
+      ].join("\n");
+
+      expect(parseManifestFiles(txt)).toEqual([
+        "system/ItemName_Classic-e.dat",
+        "system/Skillgrp.dat",
+        "system/item_baseinfo_ClassicAden.dat",
+      ]);
+    });
+
+    test("loadManifestFileList loads UTF-16LE BOM encoded local file", async () => {
+      const localManifest = path.join(testOutDir, "manifest_utf16.dat");
+      const bom = Buffer.from([0xff, 0xfe]);
+      const content = Buffer.from("system\\bom_test.dat:100:sha:0\r\n", "utf16le");
+      fs.writeFileSync(localManifest, Buffer.concat([bom, content]));
+
+      const files = await loadManifestFileList(localManifest);
+      expect(files).toEqual(["system/bom_test.dat"]);
+    });
+
+    test("loadManifestFileList loads UTF-16LE BOM encoded remote URL", async () => {
+      const bom = Buffer.from([0xff, 0xfe]);
+      const content = Buffer.from("system\\remote_bom.dat:200:sha:0\r\n", "utf16le");
+      const rawBuffer = Buffer.concat([bom, content]);
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () =>
+          rawBuffer.buffer.slice(
+            rawBuffer.byteOffset,
+            rawBuffer.byteOffset + rawBuffer.byteLength
+          ),
+      } as unknown as Response);
+
+      const files = await loadManifestFileList("https://cdn.example.com/manifest.dat");
+      expect(files).toEqual(["system/remote_bom.dat"]);
     });
 
     test("loadManifestFileList loads from local file", async () => {
@@ -219,7 +256,7 @@ describe("downloader", () => {
           outDir: testOutDir,
           config: { baseUrl: "https://cdn.example.com" },
         })
-      ).rejects.toThrow("Failed to download from https://cdn.example.com/140/system/itemname-e.dat.zip: 500 Server Error");
+      ).rejects.toThrow("Failed to download from https://cdn.example.com/140/Patch/Zip/system/itemname-e.dat.zip: 500 Server Error");
     });
 
     test("downloads latest version automatically when latest: true", async () => {
