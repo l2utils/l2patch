@@ -11,6 +11,9 @@ export interface PatchConfig {
   updateArchiveTemplate?: string;
   patchArchiveTemplate?: string;
   manifestUrlTemplate?: string;
+  maxRetries?: number;
+  retryDelayMs?: number;
+  delayMs?: number;
 }
 
 export interface CdnConfigInfo {
@@ -31,6 +34,9 @@ export interface DownloadFileOptions {
   outDir?: string;
   extract?: boolean;
   config?: PatchConfig;
+  maxRetries?: number;
+  retryDelayMs?: number;
+  skipExisting?: boolean;
 }
 
 export interface DownloadManifestOptions {
@@ -39,6 +45,8 @@ export interface DownloadManifestOptions {
   type?: "patch" | "filemap";
   outDir?: string;
   config?: PatchConfig;
+  maxRetries?: number;
+  retryDelayMs?: number;
 }
 
 export interface PatchOptions {
@@ -46,6 +54,9 @@ export interface PatchOptions {
   toVersion: string;
   outDir?: string;
   config?: PatchConfig;
+  maxRetries?: number;
+  retryDelayMs?: number;
+  skipExisting?: boolean;
 }
 
 export interface PatchStep {
@@ -73,6 +84,10 @@ export interface UpdateDownloadOptions {
   fileList?: string[];
   concurrency?: number;
   config?: PatchConfig;
+  maxRetries?: number;
+  retryDelayMs?: number;
+  delayMs?: number;
+  skipExisting?: boolean;
 }
 
 export interface UpdatePatchOptions {
@@ -83,6 +98,10 @@ export interface UpdatePatchOptions {
   fileList?: string[];
   concurrency?: number;
   config?: PatchConfig;
+  maxRetries?: number;
+  retryDelayMs?: number;
+  delayMs?: number;
+  skipExisting?: boolean;
 }
 
 export interface BulkDownloadResult {
