@@ -62,7 +62,7 @@ Live network packet captures during game updates and file checks reveal 8 active
 | **`0x0005`** | `GetLauncherInfo` | Queries official installer and launcher URLs | MSI installer URL, PlayNC and Steam web launcher links |
 | **`0x0008`** | `GetClientConfig` | Queries client maintenance and cleanup XML rules | Cligate server, GameGuard cleanup targets, architecture |
 | **`0x0009`** | `GameLevelUpdate` | Queries in-game progressive streaming configuration | XML payload for background streaming (currently `use="off"`) |
-| **`0x0004`** | `GetStatus` | Service status acknowledgement | Status flag (`status: 1`) |
+| **`0x0004`** | `GetStatus` | Service readiness & maintenance gate | Status flag (`1` = Online/Playable, `0` = Under Maintenance) |
 
 ---
 
@@ -191,13 +191,29 @@ Configures progressive / streaming updates during live gameplay (disabled in cur
 
 ---
 
-### 3.7 Opcode `0x0004` (`GetStatus`)
+### 3.7 Opcode `0x0004` (`GetStatus` — Service Readiness & Maintenance Gate)
 
-Health check and status acknowledgement response:
+Opcode `0x0004` acts as the **service availability and maintenance gatekeeper** for the launcher. In the official Purple update cycle, it is invariably invoked as the final check after version discovery (`0x0006`), CDN configuration (`0x0003`), server discovery (`0x0002`), and cleanup rules (`0x0008`).
+
+#### Response Wire Format
 ```text
 14 00 04 00 00 00 00 00 0a 08 4c 49 4e 45 41 47 45 32 10 01
-                                                        ^-- Tag 2: status = 1
+|---------| |---------| |-----------------------------| |---|
+Len=20 Op=4  Status=0    Tag 1: "LINEAGE2"              Tag 2: 1 (Online)
 ```
+
+#### Maintenance Gate Behavior
+* **Tag 2 = `1` (`0x10 0x01` — Online / Ready)**: Game services are fully operational. The launcher enables the "Update" and "Play" buttons and allows launching `System\L2.bin`.
+* **Tag 2 = `0` (or non-zero execution status — Under Maintenance)**: Maintenance mode is active (e.g., during scheduled Tuesday maintenance windows or emergency downtime). The launcher:
+  * Disables and greys out the "Update" and "Play" buttons.
+  * Displays the in-launcher maintenance notification banner.
+  * Blocks client execution to prevent players from connecting to servers undergoing database migrations or code updates.
+
+#### Stateful Session Handshake Requirement
+Live wire testing reveals that **Opcode `0x0004` cannot be queried in isolation on a blank TCP connection**:
+* If sent on a newly established TCP socket without preceding queries, the server will silently drop the request or timeout.
+* It **strictly requires an active session context**, responding only when called on the **same persistent TCP socket following Opcode `0x0006` (`GetVersionInfo`)**.
+* It represents an end-of-handshake session commit confirming that the client has negotiated the current version and is cleared to proceed.
 
 ---
 
