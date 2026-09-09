@@ -3,11 +3,15 @@ import * as path from "path";
 import {
   buildFullZipUrl,
   buildManifestUrl,
+  buildFileInfoMapUrl,
+  buildPatchFileInfoUrl,
   buildPatchUrl,
   buildUpdateArchiveUrl,
   buildPatchArchiveUrl,
   downloadFullZip,
   downloadManifest,
+  downloadFileInfoMap,
+  downloadPatchFileInfo,
   downloadPatch,
   downloadPatchUpdate,
   downloadToBuffer,
@@ -15,6 +19,8 @@ import {
   downloadUpdate,
   fetchFullZip,
   fetchManifest,
+  fetchFileInfoMap,
+  fetchPatchFileInfo,
   fetchPatch,
   fetchWithRetry,
   loadManifestFileList,
@@ -123,6 +129,26 @@ describe("downloader", () => {
         "patch"
       );
       expect(url).toBe("https://cdn.example.com/custom/_140_patch.txt");
+    });
+
+    test("buildFileInfoMapUrl builds FileInfoMap URL", () => {
+      const url = buildFileInfoMapUrl("140", {
+        baseUrl: "https://cdn.example.com",
+        gameId: "LINEAGE2",
+      });
+      expect(url).toBe(
+        "https://cdn.example.com/140/Patch/FileInfoMap_LINEAGE2_140.dat"
+      );
+    });
+
+    test("buildPatchFileInfoUrl builds PatchFileInfo URL", () => {
+      const url = buildPatchFileInfoUrl("140", {
+        baseUrl: "https://cdn.example.com",
+        gameId: "LINEAGE2",
+      });
+      expect(url).toBe(
+        "https://cdn.example.com/140/Patch/PatchFileInfo_LINEAGE2_140.dat"
+      );
     });
   });
 
@@ -623,6 +649,74 @@ describe("downloader", () => {
       expect(fs.readFileSync(saved, "utf-8")).toBe("nested manifest");
     });
 
+    test("fetchFileInfoMap returns buffer with filemap type", async () => {
+      let fetchedUrl = "";
+      global.fetch = jest.fn().mockImplementation(async (url: string) => {
+        fetchedUrl = url;
+        return {
+          ok: true,
+          arrayBuffer: async () => createMockArrayBuffer("file-info-map-buffer"),
+        } as unknown as Response;
+      });
+
+      const buffer = await fetchFileInfoMap("140", {
+        config: { baseUrl: "https://cdn.example.com", gameId: "LINEAGE2" },
+      });
+
+      expect(buffer.toString()).toBe("file-info-map-buffer");
+      expect(fetchedUrl).toContain("FileInfoMap_LINEAGE2_140.dat");
+    });
+
+    test("fetchPatchFileInfo returns buffer with patch type", async () => {
+      let fetchedUrl = "";
+      global.fetch = jest.fn().mockImplementation(async (url: string) => {
+        fetchedUrl = url;
+        return {
+          ok: true,
+          arrayBuffer: async () => createMockArrayBuffer("patch-file-info-buffer"),
+        } as unknown as Response;
+      });
+
+      const buffer = await fetchPatchFileInfo("140", {
+        config: { baseUrl: "https://cdn.example.com", gameId: "LINEAGE2" },
+      });
+
+      expect(buffer.toString()).toBe("patch-file-info-buffer");
+      expect(fetchedUrl).toContain("PatchFileInfo_LINEAGE2_140.dat");
+    });
+
+    test("downloadFileInfoMap downloads FileInfoMap file to disk", async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => createMockArrayBuffer("disk-file-info-map"),
+      } as unknown as Response);
+
+      const saved = await downloadFileInfoMap("140", {
+        outDir: testOutDir,
+        config: { baseUrl: "https://cdn.example.com" },
+      });
+
+      expect(fs.existsSync(saved)).toBe(true);
+      expect(saved).toContain("FileInfoMap_140.dat");
+      expect(fs.readFileSync(saved, "utf-8")).toBe("disk-file-info-map");
+    });
+
+    test("downloadPatchFileInfo downloads PatchFileInfo file to disk", async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => createMockArrayBuffer("disk-patch-file-info"),
+      } as unknown as Response);
+
+      const saved = await downloadPatchFileInfo("140", {
+        outDir: testOutDir,
+        config: { baseUrl: "https://cdn.example.com" },
+      });
+
+      expect(fs.existsSync(saved)).toBe(true);
+      expect(saved).toContain("PatchFileInfo_140.dat");
+      expect(fs.readFileSync(saved, "utf-8")).toBe("disk-patch-file-info");
+    });
+
     test("fetchPatch returns buffer when direct patch exists", async () => {
       global.fetch = jest
         .fn()
@@ -747,6 +841,37 @@ describe("downloader", () => {
 
       expect(result.version).toBe("160");
       expect(result.downloadedFiles.length).toBe(2);
+    });
+
+    test("downloadUpdate uses manifestType filemap when specified", async () => {
+      let manifestUrlRequested = "";
+      global.fetch = jest
+        .fn()
+        .mockImplementation(async (url: string, init?: any) => {
+          if (init?.method === "HEAD") {
+            return { ok: false, status: 404 } as unknown as Response;
+          }
+          if (url.includes("FileInfoMap") || url.includes("PatchFileInfo")) {
+            manifestUrlRequested = url;
+            return {
+              ok: true,
+              text: async () => JSON.stringify(["system/f1.dat"]),
+            } as unknown as Response;
+          }
+          return {
+            ok: true,
+            arrayBuffer: async () => createMockArrayBuffer("f1-content"),
+          } as unknown as Response;
+        });
+
+      await downloadUpdate({
+        version: "140",
+        manifestType: "filemap",
+        outDir: testOutDir,
+        config: { baseUrl: "https://cdn.example.com", gameId: "LINEAGE2" },
+      });
+
+      expect(manifestUrlRequested).toContain("FileInfoMap_LINEAGE2_140.dat");
     });
 
     test("handles partial failures during manifest bulk download", async () => {
@@ -1031,6 +1156,38 @@ describe("downloader", () => {
       expect(result.mode).toBe("archive");
       expect(batchEvents.length).toBeGreaterThan(0);
       expect(fileEvents.length).toBeGreaterThan(0);
+    });
+
+    test("downloadPatchUpdate uses manifestType when specified", async () => {
+      let manifestUrlRequested = "";
+      global.fetch = jest
+        .fn()
+        .mockImplementation(async (url: string, init?: any) => {
+          if (init?.method === "HEAD") {
+            return { ok: false, status: 404 } as unknown as Response;
+          }
+          if (url.includes("FileInfoMap") || url.includes("PatchFileInfo")) {
+            manifestUrlRequested = url;
+            return {
+              ok: true,
+              text: async () => JSON.stringify(["system/f1.dat"]),
+            } as unknown as Response;
+          }
+          return {
+            ok: true,
+            arrayBuffer: async () => createMockArrayBuffer("patch-content"),
+          } as unknown as Response;
+        });
+
+      await downloadPatchUpdate({
+        fromVersion: "139",
+        toVersion: "140",
+        manifestType: "patch",
+        outDir: testOutDir,
+        config: { baseUrl: "https://cdn.example.com", gameId: "LINEAGE2" },
+      });
+
+      expect(manifestUrlRequested).toContain("PatchFileInfo_LINEAGE2_140.dat");
     });
   });
 

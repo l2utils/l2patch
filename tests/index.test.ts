@@ -12,6 +12,12 @@ describe("index exports", () => {
     expect(typeof l2patch.buildUpdateArchiveUrl).toBe("function");
     expect(typeof l2patch.buildPatchArchiveUrl).toBe("function");
     expect(typeof l2patch.buildManifestUrl).toBe("function");
+    expect(typeof l2patch.buildFileInfoMapUrl).toBe("function");
+    expect(typeof l2patch.buildPatchFileInfoUrl).toBe("function");
+    expect(typeof l2patch.fetchFileInfoMap).toBe("function");
+    expect(typeof l2patch.fetchPatchFileInfo).toBe("function");
+    expect(typeof l2patch.downloadFileInfoMap).toBe("function");
+    expect(typeof l2patch.downloadPatchFileInfo).toBe("function");
     expect(typeof l2patch.queryCdnConfig).toBe("function");
     expect(typeof l2patch.probeUrl).toBe("function");
     expect(typeof l2patch.resolveConfig).toBe("function");

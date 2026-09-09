@@ -109,6 +109,7 @@ export interface UpdateDownloadOptions {
   latest?: boolean;
   outDir?: string;
   manifestPathOrUrl?: string;
+  manifestType?: "patch" | "filemap";
   fileList?: string[];
   concurrency?: number;
   config?: PatchConfig;
@@ -125,6 +126,7 @@ export interface UpdatePatchOptions {
   toVersion: string;
   outDir?: string;
   manifestPathOrUrl?: string;
+  manifestType?: "patch" | "filemap";
   fileList?: string[];
   concurrency?: number;
   config?: PatchConfig;
