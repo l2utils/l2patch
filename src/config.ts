@@ -160,6 +160,24 @@ export function resolveConfig(
     process.env.L2_PATCH_MANIFEST_URL_TEMPLATE ||
     undefined;
 
+  const maxRetries =
+    overrides?.maxRetries ??
+    (process.env.L2_PATCH_MAX_RETRIES
+      ? parseInt(process.env.L2_PATCH_MAX_RETRIES, 10)
+      : undefined);
+
+  const retryDelayMs =
+    overrides?.retryDelayMs ??
+    (process.env.L2_PATCH_RETRY_DELAY_MS
+      ? parseInt(process.env.L2_PATCH_RETRY_DELAY_MS, 10)
+      : undefined);
+
+  const delayMs =
+    overrides?.delayMs ??
+    (process.env.L2_PATCH_DELAY_MS
+      ? parseInt(process.env.L2_PATCH_DELAY_MS, 10)
+      : undefined);
+
   return {
     baseUrl,
     cdnHost,
@@ -173,6 +191,9 @@ export function resolveConfig(
     updateArchiveTemplate,
     patchArchiveTemplate,
     manifestUrlTemplate,
+    maxRetries,
+    retryDelayMs,
+    delayMs,
   };
 }
 

@@ -23,6 +23,21 @@ export function createDownloadVersionCommand(): Command {
     .option("-l, --latest", "Download the latest version automatically", true)
     .option("-m, --manifest <pathOrUrl>", "Path or URL to update manifest / filelist")
     .option("-c, --concurrency <number>", "Number of concurrent downloads", "4")
+    .option(
+      "-d, --delay <ms>",
+      "Inter-request delay in milliseconds between downloads",
+      "0"
+    )
+    .option(
+      "-r, --retries <number>",
+      "Maximum retry attempts for failed requests",
+      "3"
+    )
+    .option(
+      "--skip-existing",
+      "Skip downloading files that already exist locally",
+      false
+    )
     .option("-o, --out-dir <dir>", "Directory where files will be saved", ".")
     .action(async (cmdOpts, cmd) => {
       try {
@@ -30,6 +45,10 @@ export function createDownloadVersionCommand(): Command {
         requireBaseUrl(config);
 
         const targetVersion = cmdOpts.to || cmdOpts.version;
+        const concurrency = parseInt(cmdOpts.concurrency, 10);
+        const delayMs = parseInt(cmdOpts.delay, 10);
+        const maxRetries = parseInt(cmdOpts.retries, 10);
+        const skipExisting = Boolean(cmdOpts.skipExisting);
 
         if (cmdOpts.patch) {
           if (!cmdOpts.from) {
@@ -47,7 +66,10 @@ export function createDownloadVersionCommand(): Command {
             fromVersion: cmdOpts.from,
             toVersion,
             manifestPathOrUrl: cmdOpts.manifest,
-            concurrency: parseInt(cmdOpts.concurrency, 10),
+            concurrency,
+            delayMs,
+            maxRetries,
+            skipExisting,
             outDir: cmdOpts.outDir,
             config,
           });
@@ -66,7 +88,10 @@ export function createDownloadVersionCommand(): Command {
             version: targetVersion,
             latest: cmdOpts.latest && !targetVersion,
             manifestPathOrUrl: cmdOpts.manifest,
-            concurrency: parseInt(cmdOpts.concurrency, 10),
+            concurrency,
+            delayMs,
+            maxRetries,
+            skipExisting,
             outDir: cmdOpts.outDir,
             config,
           });

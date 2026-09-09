@@ -115,30 +115,138 @@ export function buildManifestUrl(
 }
 
 /**
+ * Canonical HTTP headers matching the official NCSoft Purple patch downloader (no User-Agent).
+ */
+export const NC_CDN_HEADERS: Record<string, string> = {
+  Accept: "*/*",
+  "Accept-Encoding": "identity",
+  "Cache-Control": "no-transform",
+};
+
+export interface FetchRetryOptions {
+  maxRetries?: number;
+  retryDelayMs?: number;
+}
+
+/**
+ * Parses the Retry-After header into milliseconds to wait, if present.
+ */
+export function parseRetryAfter(
+  headerValue: string | null
+): number | undefined {
+  if (!headerValue) return undefined;
+  const trimmed = headerValue.trim();
+  if (/^-?\d+$/.test(trimmed)) {
+    const seconds = parseInt(trimmed, 10);
+    return seconds >= 0 ? seconds * 1000 : undefined;
+  }
+  const dateMs = Date.parse(trimmed);
+  if (!isNaN(dateMs)) {
+    const diff = dateMs - Date.now();
+    return diff > 0 ? diff : 0;
+  }
+  return undefined;
+}
+
+export const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Executes a fetch with exponential backoff retry on transient failure codes (403, 429, 5xx)
+ * and network exceptions.
+ */
+export async function fetchWithRetry(
+  url: string,
+  init?: RequestInit,
+  options?: FetchRetryOptions
+): Promise<Response> {
+  const maxRetries = options?.maxRetries ?? 3;
+  const isTest = process.env.NODE_ENV === "test";
+  const initialDelayMs = options?.retryDelayMs ?? (isTest ? 10 : 1000);
+
+  let lastResponse: Response | undefined;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, init);
+      const isRetryable =
+        response.status === 403 ||
+        response.status === 429 ||
+        response.status === 500 ||
+        response.status === 502 ||
+        response.status === 503 ||
+        response.status === 504;
+
+      if (response.ok || !isRetryable || attempt === maxRetries) {
+        return response;
+      }
+
+      lastResponse = response;
+
+      const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
+      const jitter = isTest ? 0 : Math.random() * 200;
+      const backoffMs =
+        retryAfterMs !== undefined
+          ? Math.min(retryAfterMs, 30000)
+          : Math.min(
+              initialDelayMs * Math.pow(2, attempt) + jitter,
+              30000
+            );
+
+      await sleep(backoffMs);
+    } catch (err) {
+      lastError = err;
+      if (attempt === maxRetries) {
+        throw err;
+      }
+      const jitter = isTest ? 0 : Math.random() * 200;
+      const backoffMs = Math.min(
+        initialDelayMs * Math.pow(2, attempt) + jitter,
+        30000
+      );
+      await sleep(backoffMs);
+    }
+  }
+
+  if (lastResponse) {
+    return lastResponse;
+  }
+  throw lastError;
+}
+
+/**
  * Performs a HEAD probe to check if a resource exists at a URL.
  */
 export async function probeUrl(
   url: string,
-  authToken?: string
+  authToken?: string,
+  options?: FetchRetryOptions
 ): Promise<boolean> {
-  const headers: Record<string, string> = {
-    "User-Agent": "l2patch/1.0.0",
-  };
+  const headers: Record<string, string> = { ...NC_CDN_HEADERS };
   if (authToken) {
     headers["Authorization"] = `Bearer ${authToken}`;
   }
 
   try {
-    const response = await fetch(url, { method: "HEAD", headers });
+    const response = await fetchWithRetry(
+      url,
+      { method: "HEAD", headers },
+      options
+    );
     if (response.ok) {
       return true;
     }
     if (response.status === 405) {
       // Some CDNs reject HEAD; fallback to GET with Range 0-0
-      const getResp = await fetch(url, {
-        method: "GET",
-        headers: { ...headers, Range: "bytes=0-0" },
-      });
+      const getResp = await fetchWithRetry(
+        url,
+        {
+          method: "GET",
+          headers: { ...headers, Range: "bytes=0-0" },
+        },
+        options
+      );
       return getResp.ok;
     }
     return false;
@@ -152,16 +260,15 @@ export async function probeUrl(
  */
 export async function downloadToBuffer(
   url: string,
-  authToken?: string
+  authToken?: string,
+  options?: FetchRetryOptions
 ): Promise<Buffer> {
-  const headers: Record<string, string> = {
-    "User-Agent": "l2patch/1.0.0",
-  };
+  const headers: Record<string, string> = { ...NC_CDN_HEADERS };
   if (authToken) {
     headers["Authorization"] = `Bearer ${authToken}`;
   }
 
-  const response = await fetch(url, { headers });
+  const response = await fetchWithRetry(url, { headers }, options);
   if (!response.ok) {
     throw new Error(
       `Failed to download from ${url}: ${response.status} ${response.statusText}`
@@ -178,9 +285,25 @@ export async function downloadToBuffer(
 export async function downloadToFile(
   url: string,
   destinationPath: string,
-  authToken?: string
+  authToken?: string,
+  options?: {
+    maxRetries?: number;
+    retryDelayMs?: number;
+    skipExisting?: boolean;
+  }
 ): Promise<string> {
-  const buffer = await downloadToBuffer(url, authToken);
+  if (options?.skipExisting && fs.existsSync(destinationPath)) {
+    try {
+      const stats = fs.statSync(destinationPath);
+      if (stats.size > 0) {
+        return destinationPath;
+      }
+    } catch {
+      // Fall through to download if stat fails
+    }
+  }
+
+  const buffer = await downloadToBuffer(url, authToken, options);
 
   const dir = path.dirname(destinationPath);
   if (!fs.existsSync(dir)) {
@@ -248,19 +371,18 @@ export function parseManifestFiles(manifestContent: string): string[] {
  */
 export async function loadManifestFileList(
   manifestPathOrUrl: string,
-  authToken?: string
+  authToken?: string,
+  options?: FetchRetryOptions
 ): Promise<string[]> {
   if (
     manifestPathOrUrl.startsWith("http://") ||
     manifestPathOrUrl.startsWith("https://")
   ) {
-    const headers: Record<string, string> = {
-      "User-Agent": "l2patch/1.0.0",
-    };
+    const headers: Record<string, string> = { ...NC_CDN_HEADERS };
     if (authToken) {
       headers["Authorization"] = `Bearer ${authToken}`;
     }
-    const resp = await fetch(manifestPathOrUrl, { headers });
+    const resp = await fetchWithRetry(manifestPathOrUrl, { headers }, options);
     if (!resp.ok) {
       throw new Error(
         `Failed to fetch manifest from ${manifestPathOrUrl}: ${resp.status} ${resp.statusText}`
@@ -289,17 +411,22 @@ export async function loadManifestFileList(
 }
 
 /**
- * Executes async tasks with limited concurrency.
+ * Executes async tasks with limited concurrency and optional inter-request delay.
  */
-async function runWithConcurrency<T, R>(
+export async function runWithConcurrency<T, R>(
   items: T[],
   limit: number,
-  worker: (item: T) => Promise<R>
+  worker: (item: T) => Promise<R>,
+  delayMs: number = 0
 ): Promise<R[]> {
   const results: R[] = [];
   const executing: Promise<void>[] = [];
 
-  for (const item of items) {
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (delayMs > 0 && i > 0) {
+      await sleep(delayMs);
+    }
     const p = Promise.resolve().then(() => worker(item)).then((res) => {
       results.push(res);
     });
@@ -332,7 +459,10 @@ export async function fetchFullZip(
   }
 
   const url = buildFullZipUrl(filePath, targetVersion, config);
-  return downloadToBuffer(url, config.authToken);
+  return downloadToBuffer(url, config.authToken, {
+    maxRetries: options?.maxRetries ?? config.maxRetries,
+    retryDelayMs: options?.retryDelayMs ?? config.retryDelayMs,
+  });
 }
 
 /**
@@ -350,14 +480,26 @@ export async function downloadFullZip(
     targetVersion = latestInfo.version;
   }
 
+  const outDir = path.resolve(process.cwd(), options?.outDir || ".");
+  const fileName = `${path.basename(filePath)}_${targetVersion}.zip`;
+  const destination = path.join(outDir, fileName);
+
+  if (options?.skipExisting && fs.existsSync(destination)) {
+    try {
+      const stats = fs.statSync(destination);
+      if (stats.size > 0) {
+        return destination;
+      }
+    } catch {
+      // Fall through to download if stat fails
+    }
+  }
+
   const buffer = await fetchFullZip(filePath, {
     ...options,
     version: targetVersion,
     latest: false,
   });
-  const outDir = path.resolve(process.cwd(), options?.outDir || ".");
-  const fileName = `${path.basename(filePath)}_${targetVersion}.zip`;
-  const destination = path.join(outDir, fileName);
 
   const dir = path.dirname(destination);
   if (!fs.existsSync(dir)) {
@@ -386,7 +528,10 @@ export async function fetchManifest(
 
   const type = options?.type || "patch";
   const url = buildManifestUrl(targetVersion, config, type);
-  return downloadToBuffer(url, config.authToken);
+  return downloadToBuffer(url, config.authToken, {
+    maxRetries: options?.maxRetries ?? config.maxRetries,
+    retryDelayMs: options?.retryDelayMs ?? config.retryDelayMs,
+  });
 }
 
 /**
@@ -437,12 +582,16 @@ export async function fetchPatch(
 ): Promise<Buffer> {
   const config = resolveConfig(options.config);
   const { fromVersion, toVersion } = options;
+  const retryOpts = {
+    maxRetries: options.maxRetries ?? config.maxRetries,
+    retryDelayMs: options.retryDelayMs ?? config.retryDelayMs,
+  };
 
   const directUrl = buildPatchUrl(filePath, fromVersion, toVersion, config);
-  const directExists = await probeUrl(directUrl, config.authToken);
+  const directExists = await probeUrl(directUrl, config.authToken, retryOpts);
 
   if (directExists) {
-    return downloadToBuffer(directUrl, config.authToken);
+    return downloadToBuffer(directUrl, config.authToken, retryOpts);
   }
 
   throw new Error(
@@ -463,15 +612,25 @@ export async function downloadPatch(
   const outDir = path.resolve(process.cwd(), options.outDir || ".");
 
   const { fromVersion, toVersion } = options;
+  const retryOpts = {
+    maxRetries: options.maxRetries ?? config.maxRetries,
+    retryDelayMs: options.retryDelayMs ?? config.retryDelayMs,
+    skipExisting: options.skipExisting,
+  };
 
   // 1. Probe for direct N -> M patch
   const directUrl = buildPatchUrl(filePath, fromVersion, toVersion, config);
-  const directExists = await probeUrl(directUrl, config.authToken);
+  const directExists = await probeUrl(directUrl, config.authToken, retryOpts);
 
   if (directExists) {
     const fileName = `${path.basename(filePath)}_${fromVersion}_to_${toVersion}.patch`;
     const destination = path.join(outDir, fileName);
-    const savedPath = await downloadToFile(directUrl, destination, config.authToken);
+    const savedPath = await downloadToFile(
+      directUrl,
+      destination,
+      config.authToken,
+      retryOpts
+    );
 
     return {
       filePath,
@@ -508,7 +667,7 @@ export async function downloadPatch(
   for (let current = fromNum; current < toNum; current++) {
     const next = current + 1;
     const stepUrl = buildPatchUrl(filePath, String(current), String(next), config);
-    const exists = await probeUrl(stepUrl, config.authToken);
+    const exists = await probeUrl(stepUrl, config.authToken, retryOpts);
 
     if (!exists) {
       throw new Error(
@@ -519,7 +678,12 @@ export async function downloadPatch(
 
     const fileName = `${path.basename(filePath)}_${current}_to_${next}.patch`;
     const destination = path.join(outDir, fileName);
-    const savedPath = await downloadToFile(stepUrl, destination, config.authToken);
+    const savedPath = await downloadToFile(
+      stepUrl,
+      destination,
+      config.authToken,
+      retryOpts
+    );
 
     steps.push({
       from: String(current),
@@ -552,6 +716,12 @@ export async function downloadUpdate(
   const config = resolveConfig(options?.config);
   const outDir = path.resolve(process.cwd(), options?.outDir || ".");
   const concurrency = Math.max(1, options?.concurrency || 4);
+  const delayMs = options?.delayMs ?? config.delayMs ?? 0;
+  const retryOpts = {
+    maxRetries: options?.maxRetries ?? config.maxRetries,
+    retryDelayMs: options?.retryDelayMs ?? config.retryDelayMs,
+    skipExisting: options?.skipExisting,
+  };
 
   let targetVersion = options?.version;
   if (options?.latest || !targetVersion) {
@@ -562,11 +732,16 @@ export async function downloadUpdate(
   // Check for consolidated update archive first if no explicit manifest was supplied
   if (!options?.manifestPathOrUrl && !options?.fileList) {
     const archiveUrl = buildUpdateArchiveUrl(targetVersion, config);
-    const archiveExists = await probeUrl(archiveUrl, config.authToken);
+    const archiveExists = await probeUrl(archiveUrl, config.authToken, retryOpts);
     if (archiveExists) {
       const fileName = `update_${targetVersion}.zip`;
       const destination = path.join(outDir, fileName);
-      const savedPath = await downloadToFile(archiveUrl, destination, config.authToken);
+      const savedPath = await downloadToFile(
+        archiveUrl,
+        destination,
+        config.authToken,
+        retryOpts
+      );
       return {
         version: targetVersion,
         mode: "archive",
@@ -582,7 +757,7 @@ export async function downloadUpdate(
   if (files.length === 0) {
     const manifestSource =
       options?.manifestPathOrUrl || buildManifestUrl(targetVersion, config);
-    files = await loadManifestFileList(manifestSource, config.authToken);
+    files = await loadManifestFileList(manifestSource, config.authToken, retryOpts);
   }
 
   if (files.length === 0) {
@@ -594,18 +769,26 @@ export async function downloadUpdate(
   const downloadedFiles: string[] = [];
   const failedFiles: { file: string; error: string }[] = [];
 
-  await runWithConcurrency(files, concurrency, async (file) => {
-    try {
-      const saved = await downloadFullZip(file, {
-        version: targetVersion,
-        outDir,
-        config,
-      });
-      downloadedFiles.push(saved);
-    } catch (err) {
-      failedFiles.push({ file, error: (err as Error).message });
-    }
-  });
+  await runWithConcurrency(
+    files,
+    concurrency,
+    async (file) => {
+      try {
+        const saved = await downloadFullZip(file, {
+          version: targetVersion,
+          outDir,
+          config,
+          maxRetries: retryOpts.maxRetries,
+          retryDelayMs: retryOpts.retryDelayMs,
+          skipExisting: retryOpts.skipExisting,
+        });
+        downloadedFiles.push(saved);
+      } catch (err) {
+        failedFiles.push({ file, error: (err as Error).message });
+      }
+    },
+    delayMs
+  );
 
   return {
     version: targetVersion,
@@ -627,16 +810,27 @@ export async function downloadPatchUpdate(
   const config = resolveConfig(options.config);
   const outDir = path.resolve(process.cwd(), options.outDir || ".");
   const concurrency = Math.max(1, options.concurrency || 4);
+  const delayMs = options.delayMs ?? config.delayMs ?? 0;
+  const retryOpts = {
+    maxRetries: options.maxRetries ?? config.maxRetries,
+    retryDelayMs: options.retryDelayMs ?? config.retryDelayMs,
+    skipExisting: options.skipExisting,
+  };
   const { fromVersion, toVersion } = options;
 
   // Check for consolidated patch archive first if no explicit manifest was supplied
   if (!options.manifestPathOrUrl && !options.fileList) {
     const archiveUrl = buildPatchArchiveUrl(fromVersion, toVersion, config);
-    const archiveExists = await probeUrl(archiveUrl, config.authToken);
+    const archiveExists = await probeUrl(archiveUrl, config.authToken, retryOpts);
     if (archiveExists) {
       const fileName = `patch_${fromVersion}_to_${toVersion}.zip`;
       const destination = path.join(outDir, fileName);
-      const savedPath = await downloadToFile(archiveUrl, destination, config.authToken);
+      const savedPath = await downloadToFile(
+        archiveUrl,
+        destination,
+        config.authToken,
+        retryOpts
+      );
       return {
         fromVersion,
         toVersion,
@@ -653,7 +847,7 @@ export async function downloadPatchUpdate(
   if (files.length === 0) {
     const manifestSource =
       options.manifestPathOrUrl || buildManifestUrl(toVersion, config);
-    files = await loadManifestFileList(manifestSource, config.authToken);
+    files = await loadManifestFileList(manifestSource, config.authToken, retryOpts);
   }
 
   if (files.length === 0) {
@@ -665,19 +859,27 @@ export async function downloadPatchUpdate(
   const downloadedFiles: string[] = [];
   const failedFiles: { file: string; error: string }[] = [];
 
-  await runWithConcurrency(files, concurrency, async (file) => {
-    try {
-      const result = await downloadPatch(file, {
-        fromVersion,
-        toVersion,
-        outDir,
-        config,
-      });
-      downloadedFiles.push(...result.downloadedFiles);
-    } catch (err) {
-      failedFiles.push({ file, error: (err as Error).message });
-    }
-  });
+  await runWithConcurrency(
+    files,
+    concurrency,
+    async (file) => {
+      try {
+        const result = await downloadPatch(file, {
+          fromVersion,
+          toVersion,
+          outDir,
+          config,
+          maxRetries: retryOpts.maxRetries,
+          retryDelayMs: retryOpts.retryDelayMs,
+          skipExisting: retryOpts.skipExisting,
+        });
+        downloadedFiles.push(...result.downloadedFiles);
+      } catch (err) {
+        failedFiles.push({ file, error: (err as Error).message });
+      }
+    },
+    delayMs
+  );
 
   return {
     fromVersion,
