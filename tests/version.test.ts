@@ -272,4 +272,88 @@ describe("version", () => {
       jest.restoreAllMocks();
     });
   });
+
+  describe("queryCdnConfig", () => {
+    test("queries and parses active CDN hostname and base URL", async () => {
+      const { EventEmitter } = require("events");
+      const net = require("net");
+      const { queryCdnConfig } = require("../src/version");
+      const mockSocket = new EventEmitter();
+      mockSocket.write = jest.fn();
+      mockSocket.end = jest.fn();
+
+      jest.spyOn(net, "createConnection").mockImplementationOnce((opts: any, cb: any) => {
+        process.nextTick(() => {
+          cb();
+          const cdnHost = "d35293xeakkyq4.cloudfront.net";
+          const buf = Buffer.concat([
+            Buffer.alloc(8), // 8 byte frame header
+            Buffer.from([0x12, cdnHost.length]), // tag 0x12 (length-delimited string)
+            Buffer.from(cdnHost, "utf-8"),
+          ]);
+          mockSocket.emit("data", buf);
+        });
+        return mockSocket;
+      });
+
+      const result = await queryCdnConfig("updater.example.com", 27500, "LINEAGE2");
+      expect(result.cdnHost).toBe("d35293xeakkyq4.cloudfront.net");
+      expect(result.baseUrl).toBe("http://d35293xeakkyq4.cloudfront.net/LINEAGE2");
+      jest.restoreAllMocks();
+    });
+
+    test("handles missing tag 0x12 in CDN response", async () => {
+      const { EventEmitter } = require("events");
+      const net = require("net");
+      const { queryCdnConfig } = require("../src/version");
+      const mockSocket = new EventEmitter();
+      mockSocket.write = jest.fn();
+      mockSocket.end = jest.fn();
+
+      jest.spyOn(net, "createConnection").mockImplementationOnce((opts: any, cb: any) => {
+        process.nextTick(() => {
+          cb();
+          mockSocket.emit("data", Buffer.alloc(12)); // missing 0x12 tag
+        });
+        return mockSocket;
+      });
+
+      await expect(
+        queryCdnConfig("updater.example.com", 27500, "LINEAGE2")
+      ).rejects.toThrow("missing CDN host tag (0x12)");
+      jest.restoreAllMocks();
+    });
+
+    test("handles timeout and socket error in queryCdnConfig", async () => {
+      const { EventEmitter } = require("events");
+      const net = require("net");
+      const { queryCdnConfig } = require("../src/version");
+
+      // 1. Timeout
+      const mockTimeout = new EventEmitter();
+      mockTimeout.write = jest.fn();
+      mockTimeout.destroy = jest.fn();
+      jest.spyOn(net, "createConnection").mockImplementationOnce(() => mockTimeout);
+
+      await expect(
+        queryCdnConfig("updater.example.com", 27500, "LINEAGE2", 20)
+      ).rejects.toThrow("Timeout querying CDN config");
+
+      // 2. Socket error
+      const mockError = new EventEmitter();
+      mockError.write = jest.fn();
+      jest.spyOn(net, "createConnection").mockImplementationOnce(() => {
+        process.nextTick(() => {
+          mockError.emit("error", new Error("Socket closed"));
+        });
+        return mockError;
+      });
+
+      await expect(
+        queryCdnConfig("updater.example.com", 27500, "LINEAGE2")
+      ).rejects.toThrow("Socket closed");
+
+      jest.restoreAllMocks();
+    });
+  });
 });

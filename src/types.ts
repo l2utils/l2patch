@@ -1,5 +1,6 @@
 export interface PatchConfig {
   baseUrl?: string;
+  cdnHost?: string;
   versionUrl?: string;
   updaterHost?: string;
   updaterPort?: number;
@@ -10,6 +11,11 @@ export interface PatchConfig {
   updateArchiveTemplate?: string;
   patchArchiveTemplate?: string;
   manifestUrlTemplate?: string;
+}
+
+export interface CdnConfigInfo {
+  cdnHost: string;
+  baseUrl: string;
 }
 
 export interface VersionInfo {
