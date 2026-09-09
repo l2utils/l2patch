@@ -204,6 +204,15 @@ const patchResult = await downloadPatch("system/itemname-e.dat", {
 
 ---
 
+## Documentation & Protocol Specifications
+
+Detailed technical specifications and reverse-engineered wire protocols:
+
+- 📡 [**Updater Network Protocol Specification**](docs/updater-protocol.md): TCP port `27500` protocol framing, protobuf schemas, and complete opcode catalog (`0x0002` through `0x0009`).
+- 📋 [**Manifest Formats Specification**](docs/manifest-formats.md): Detailed comparison, record schemas, and field semantics for `FileInfoMap` (disk state catalog) and `PatchFileInfo` (CDN delivery index).
+
+---
+
 ## License
 
 BSD-3-Clause © [l2utils](https://github.com/l2utils)
