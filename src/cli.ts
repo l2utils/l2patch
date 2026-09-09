@@ -70,7 +70,14 @@ program
   .action(async (cmdOpts) => {
     try {
       const config = buildConfigFromCli(cmdOpts);
-      const info = await checkCurrentVersion(config);
+      const updaterHost =
+        config.updaterHost ||
+        process.env.L2_PATCH_UPDATER_HOST ||
+        (!config.versionUrl ? "updater.nclauncher.ncsoft.com" : undefined);
+      const info = await checkCurrentVersion({
+        ...config,
+        ...(updaterHost ? { updaterHost } : {}),
+      });
       if (cmdOpts.json) {
         console.log(JSON.stringify(info, null, 2));
       } else {
