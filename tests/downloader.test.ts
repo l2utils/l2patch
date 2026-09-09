@@ -896,7 +896,146 @@ describe("downloader", () => {
     });
   });
 
+  describe("progress tracking & streaming", () => {
+    test("downloadToBuffer streams chunks and notifies onProgress", async () => {
+      const chunk1 = Buffer.from("Hello, ");
+      const chunk2 = Buffer.from("World!");
+      let chunkIndex = 0;
+      const chunks = [chunk1, chunk2];
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === "content-length" ? "13" : null,
+        },
+        body: {
+          getReader: () => ({
+            read: async () => {
+              if (chunkIndex < chunks.length) {
+                return { done: false, value: new Uint8Array(chunks[chunkIndex++]) };
+              }
+              return { done: true, value: undefined };
+            },
+          }),
+        },
+      } as unknown as Response);
+
+      const progressEvents: any[] = [];
+      const buffer = await downloadToBuffer(
+        "https://cdn.example.com/test.dat",
+        undefined,
+        (p) => progressEvents.push(p)
+      );
+
+      expect(buffer.toString()).toBe("Hello, World!");
+      expect(progressEvents.length).toBe(2);
+      expect(progressEvents[0]).toEqual({
+        receivedBytes: 7,
+        totalBytes: 13,
+        chunkSize: 7,
+      });
+      expect(progressEvents[1]).toEqual({
+        receivedBytes: 13,
+        totalBytes: 13,
+        chunkSize: 6,
+      });
+    });
+
+    test("fetchFullZip passes onProgress", async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => createMockArrayBuffer("zip-data"),
+      } as unknown as Response);
+
+      const progressEvents: any[] = [];
+      const buffer = await fetchFullZip("system/test.dat", {
+        version: "140",
+        config: { baseUrl: "https://cdn.example.com" },
+        onProgress: (p) => progressEvents.push(p),
+      });
+
+      expect(buffer.toString()).toBe("zip-data");
+      expect(progressEvents.length).toBe(1);
+      expect(progressEvents[0].filePath).toBe("system/test.dat");
+    });
+
+    test("fetchPatch passes onProgress", async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce({ ok: true } as Response) // HEAD probe
+        .mockResolvedValueOnce({
+          ok: true,
+          arrayBuffer: async () => createMockArrayBuffer("patch-data"),
+        } as unknown as Response);
+
+      const progressEvents: any[] = [];
+      const buffer = await fetchPatch("system/test.dat", {
+        fromVersion: "140",
+        toVersion: "142",
+        config: { baseUrl: "https://cdn.example.com" },
+        onProgress: (p) => progressEvents.push(p),
+      });
+
+      expect(buffer.toString()).toBe("patch-data");
+      expect(progressEvents.length).toBe(1);
+      expect(progressEvents[0].filePath).toBe("system/test.dat");
+    });
+
+    test("downloadUpdate in archive mode notifies onProgress and onFileProgress", async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce({ ok: true } as Response) // HEAD probe for archive
+        .mockResolvedValueOnce({
+          ok: true,
+          arrayBuffer: async () => createMockArrayBuffer("archive-bytes"),
+        } as unknown as Response);
+
+      const batchEvents: any[] = [];
+      const fileEvents: any[] = [];
+
+      const result = await downloadUpdate({
+        version: "140",
+        outDir: testOutDir,
+        config: { baseUrl: "https://cdn.example.com" },
+        onProgress: (p) => batchEvents.push(p),
+        onFileProgress: (p) => fileEvents.push(p),
+      });
+
+      expect(result.mode).toBe("archive");
+      expect(batchEvents.length).toBeGreaterThan(0);
+      expect(fileEvents.length).toBeGreaterThan(0);
+    });
+
+    test("downloadPatchUpdate in archive mode notifies onProgress and onFileProgress", async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce({ ok: true } as Response) // HEAD probe for archive
+        .mockResolvedValueOnce({
+          ok: true,
+          arrayBuffer: async () => createMockArrayBuffer("archive-patch-bytes"),
+        } as unknown as Response);
+
+      const batchEvents: any[] = [];
+      const fileEvents: any[] = [];
+
+      const result = await downloadPatchUpdate({
+        fromVersion: "140",
+        toVersion: "142",
+        outDir: testOutDir,
+        config: { baseUrl: "https://cdn.example.com" },
+        onProgress: (p) => batchEvents.push(p),
+        onFileProgress: (p) => fileEvents.push(p),
+      });
+
+      expect(result.mode).toBe("archive");
+      expect(batchEvents.length).toBeGreaterThan(0);
+      expect(fileEvents.length).toBeGreaterThan(0);
+    });
+  });
+
   describe("NC_CDN_HEADERS & No User-Agent", () => {
+
     test("NC_CDN_HEADERS has expected wire headers and no User-Agent", () => {
       expect(NC_CDN_HEADERS.Accept).toBe("*/*");
       expect(NC_CDN_HEADERS["Accept-Encoding"]).toBe("identity");

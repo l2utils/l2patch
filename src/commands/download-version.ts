@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { requireBaseUrl } from "../config";
 import { downloadPatchUpdate, downloadUpdate } from "../downloader";
+import { BatchProgressReporter } from "../progress";
 import { checkCurrentVersion } from "../version";
 import { buildConfigFromCli } from "./common";
 
@@ -39,6 +40,8 @@ export function createDownloadVersionCommand(): Command {
       false
     )
     .option("-o, --out-dir <dir>", "Directory where files will be saved", ".")
+    .option("--progress", "Display download progress")
+    .option("--no-progress", "Disable download progress")
     .action(async (cmdOpts, cmd) => {
       try {
         const config = buildConfigFromCli(cmd, cmdOpts);
@@ -49,6 +52,11 @@ export function createDownloadVersionCommand(): Command {
         const delayMs = parseInt(cmdOpts.delay, 10);
         const maxRetries = parseInt(cmdOpts.retries, 10);
         const skipExisting = Boolean(cmdOpts.skipExisting);
+
+        const reporter = new BatchProgressReporter({
+          stream: process.stderr,
+          enabled: cmdOpts.progress,
+        });
 
         if (cmdOpts.patch) {
           if (!cmdOpts.from) {
@@ -72,7 +80,10 @@ export function createDownloadVersionCommand(): Command {
             skipExisting,
             outDir: cmdOpts.outDir,
             config,
+            onProgress: (p) => reporter.update(p),
           });
+
+          reporter.finish();
 
           console.log(`Mode: ${result.mode}`);
           console.log(`Total files downloaded: ${result.downloadedFiles.length}`);
@@ -94,7 +105,11 @@ export function createDownloadVersionCommand(): Command {
             skipExisting,
             outDir: cmdOpts.outDir,
             config,
+            onProgress: (p) => reporter.update(p),
           });
+
+          reporter.finish();
+
 
           console.log(`Mode: ${result.mode}`);
           console.log(

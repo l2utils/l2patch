@@ -3,8 +3,10 @@ import * as path from "path";
 import { Command } from "commander";
 import { requireBaseUrl } from "../config";
 import { fetchFullZip, fetchPatch } from "../downloader";
+import { FileProgressReporter } from "../progress";
 import { checkCurrentVersion } from "../version";
 import { buildConfigFromCli } from "./common";
+
 
 /**
  * Creates the `download` command for the commander program.
@@ -40,6 +42,8 @@ export function createDownloadCommand(): Command {
       "Skip downloading if output file already exists locally",
       false
     )
+    .option("--progress", "Display download progress")
+    .option("--no-progress", "Disable download progress")
     .action(async (filePath, cmdOpts, cmd) => {
       try {
         const config = buildConfigFromCli(cmd, cmdOpts);
@@ -54,6 +58,12 @@ export function createDownloadCommand(): Command {
             return;
           }
         }
+
+        const reporter = new FileProgressReporter({
+          stream: process.stderr,
+          enabled: cmdOpts.progress,
+          label: filePath,
+        });
 
         let buffer: Buffer;
         if (cmdOpts.patch) {
@@ -73,6 +83,7 @@ export function createDownloadCommand(): Command {
             toVersion,
             config,
             maxRetries,
+            onProgress: (p) => reporter.update(p),
           });
         } else {
           buffer = await fetchFullZip(filePath, {
@@ -80,8 +91,13 @@ export function createDownloadCommand(): Command {
             latest: cmdOpts.latest && !targetVersion,
             config,
             maxRetries,
+            onProgress: (p) => reporter.update(p),
           });
         }
+
+        reporter.finish();
+
+
 
         if (cmdOpts.output) {
           const dest = path.resolve(process.cwd(), cmdOpts.output);
