@@ -33,6 +33,14 @@ export interface DownloadFileOptions {
   config?: PatchConfig;
 }
 
+export interface DownloadManifestOptions {
+  version?: string;
+  latest?: boolean;
+  type?: "patch" | "filemap";
+  outDir?: string;
+  config?: PatchConfig;
+}
+
 export interface PatchOptions {
   fromVersion: string;
   toVersion: string;

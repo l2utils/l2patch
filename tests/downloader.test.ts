@@ -2,10 +2,12 @@ import * as fs from "fs";
 import * as path from "path";
 import {
   buildFullZipUrl,
+  buildManifestUrl,
   buildPatchUrl,
   buildUpdateArchiveUrl,
   buildPatchArchiveUrl,
   downloadFullZip,
+  downloadManifest,
   downloadPatch,
   downloadUpdate,
   downloadPatchUpdate,
@@ -64,6 +66,54 @@ describe("downloader", () => {
         baseUrl: "https://cdn.example.com",
       });
       expect(url).toBe("https://cdn.example.com/archives/patch_140_to_142.zip");
+    });
+
+    test("buildManifestUrl formats default URL with gameId", () => {
+      const url = buildManifestUrl("140", {
+        baseUrl: "https://cdn.example.com",
+        gameId: "LINEAGE2",
+      });
+      expect(url).toBe(
+        "https://cdn.example.com/140/Patch/PatchFileInfo_LINEAGE2_140.dat"
+      );
+    });
+
+    test("buildManifestUrl formats filemap URL without gameId", () => {
+      const url = buildManifestUrl(
+        "140",
+        {
+          baseUrl: "https://cdn.example.com",
+        },
+        "filemap"
+      );
+      expect(url).toBe("https://cdn.example.com/140/Patch/FileInfoMap_140.dat");
+    });
+
+    test("buildManifestUrl respects custom template", () => {
+      const url = buildManifestUrl(
+        "140",
+        {
+          baseUrl: "https://cdn.example.com",
+          gameId: "LINEAGE2",
+          manifestUrlTemplate:
+            "{baseUrl}/custom/{gameId}_{version}_{type}.txt",
+        },
+        "patch"
+      );
+      expect(url).toBe("https://cdn.example.com/custom/LINEAGE2_140_patch.txt");
+    });
+
+    test("buildManifestUrl respects custom template when gameId is undefined", () => {
+      const url = buildManifestUrl(
+        "140",
+        {
+          baseUrl: "https://cdn.example.com",
+          manifestUrlTemplate:
+            "{baseUrl}/custom/{gameId}_{version}_{type}.txt",
+        },
+        "patch"
+      );
+      expect(url).toBe("https://cdn.example.com/custom/_140_patch.txt");
     });
   });
 
@@ -206,6 +256,18 @@ describe("downloader", () => {
       const exists = await probeUrl("https://example.com/test.patch");
       expect(exists).toBe(false);
     });
+
+    test("sends auth token in headers when provided", async () => {
+      let authHeader: string | undefined;
+      global.fetch = jest.fn().mockImplementation(async (_url, opts) => {
+        authHeader = opts?.headers?.Authorization;
+        return { ok: true } as unknown as Response;
+      });
+
+      const exists = await probeUrl("https://example.com/test.patch", "my-secret-token");
+      expect(exists).toBe(true);
+      expect(authHeader).toBe("Bearer my-secret-token");
+    });
   });
 
   describe("downloadFullZip", () => {
@@ -280,6 +342,68 @@ describe("downloader", () => {
 
       expect(fs.existsSync(savedPath)).toBe(true);
       expect(savedPath).toContain("itemname-e.dat_155.zip");
+    });
+  });
+
+  describe("downloadManifest", () => {
+    test("downloads manifest with explicit version and gameId", async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => createMockArrayBuffer("manifest content"),
+      } as unknown as Response);
+
+      const saved = await downloadManifest("140", {
+        outDir: testOutDir,
+        config: { baseUrl: "https://cdn.example.com", gameId: "LINEAGE2" },
+      });
+
+      expect(saved).toBe(path.join(testOutDir, "PatchFileInfo_LINEAGE2_140.dat"));
+      expect(fs.readFileSync(saved, "utf-8")).toBe("manifest content");
+    });
+
+    test("downloads filemap manifest without gameId", async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => createMockArrayBuffer("filemap content"),
+      } as unknown as Response);
+
+      const saved = await downloadManifest("140", {
+        type: "filemap",
+        outDir: testOutDir,
+        config: { baseUrl: "https://cdn.example.com" },
+      });
+
+      expect(saved).toBe(path.join(testOutDir, "FileInfoMap_140.dat"));
+      expect(fs.readFileSync(saved, "utf-8")).toBe("filemap content");
+    });
+
+    test("downloads latest manifest when version not provided", async () => {
+      global.fetch = jest
+        .fn()
+        // Version check call
+        .mockResolvedValueOnce({
+          ok: true,
+          headers: new Headers({ "content-type": "application/json" }),
+          text: async () => JSON.stringify({ version: "155" }),
+        } as unknown as Response)
+        // Download call
+        .mockResolvedValueOnce({
+          ok: true,
+          arrayBuffer: async () => createMockArrayBuffer("latest manifest"),
+        } as unknown as Response);
+
+      const saved = await downloadManifest(undefined, {
+        latest: true,
+        outDir: testOutDir,
+        config: {
+          baseUrl: "https://cdn.example.com",
+          versionUrl: "https://cdn.example.com/version.json",
+          gameId: "LINEAGE2",
+        },
+      });
+
+      expect(saved).toBe(path.join(testOutDir, "PatchFileInfo_LINEAGE2_155.dat"));
+      expect(fs.readFileSync(saved, "utf-8")).toBe("latest manifest");
     });
   });
 

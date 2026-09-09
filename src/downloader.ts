@@ -4,6 +4,7 @@ import { requireBaseUrl, resolveConfig } from "./config";
 import {
   BulkDownloadResult,
   DownloadFileOptions,
+  DownloadManifestOptions,
   PatchConfig,
   PatchDownloadResult,
   PatchOptions,
@@ -93,15 +94,24 @@ export function buildPatchArchiveUrl(
  */
 export function buildManifestUrl(
   version: string,
-  config: PatchConfig
+  config: PatchConfig,
+  type: "patch" | "filemap" = "patch"
 ): string {
   const baseUrl = requireBaseUrl(config).replace(/\/+$/, "");
-  const template =
-    config.manifestUrlTemplate || "{baseUrl}/{version}/manifest.json";
+  const gameId = config.gameId;
 
-  return template
-    .replace("{baseUrl}", baseUrl)
-    .replace("{version}", encodeURIComponent(version));
+  if (config.manifestUrlTemplate) {
+    return config.manifestUrlTemplate
+      .replace(/{baseUrl}/g, baseUrl)
+      .replace(/{version}/g, encodeURIComponent(version))
+      .replace(/{gameId}/g, gameId || "")
+      .replace(/{type}/g, type);
+  }
+
+  const prefix = type === "filemap" ? "FileInfoMap" : "PatchFileInfo";
+  return gameId
+    ? `${baseUrl}/${encodeURIComponent(version)}/Patch/${prefix}_${gameId}_${encodeURIComponent(version)}.dat`
+    : `${baseUrl}/${encodeURIComponent(version)}/Patch/${prefix}_${encodeURIComponent(version)}.dat`;
 }
 
 /**
@@ -314,6 +324,35 @@ export async function downloadFullZip(
   const url = buildFullZipUrl(filePath, targetVersion, config);
   const outDir = path.resolve(process.cwd(), options?.outDir || ".");
   const fileName = `${path.basename(filePath)}_${targetVersion}.zip`;
+  const destination = path.join(outDir, fileName);
+
+  return downloadToFile(url, destination, config.authToken);
+}
+
+/**
+ * Downloads the manifest file for a given version (or latest).
+ */
+export async function downloadManifest(
+  version?: string,
+  options?: DownloadManifestOptions
+): Promise<string> {
+  const config = resolveConfig(options?.config);
+  requireBaseUrl(config);
+
+  let targetVersion = version || options?.version;
+  if (options?.latest || !targetVersion) {
+    const latestInfo = await checkCurrentVersion(config);
+    targetVersion = latestInfo.version;
+  }
+
+  const type = options?.type || "patch";
+  const url = buildManifestUrl(targetVersion, config, type);
+  const outDir = path.resolve(process.cwd(), options?.outDir || ".");
+  const prefix = type === "filemap" ? "FileInfoMap" : "PatchFileInfo";
+  const gameId = config.gameId;
+  const fileName = gameId
+    ? `${prefix}_${gameId}_${targetVersion}.dat`
+    : `${prefix}_${targetVersion}.dat`;
   const destination = path.join(outDir, fileName);
 
   return downloadToFile(url, destination, config.authToken);

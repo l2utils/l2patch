@@ -1,13 +1,23 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { checkCurrentVersion, queryCdnConfig } from "./version";
+import {
+  requireBaseUrl,
+  requireGameId,
+  requireUpdaterHost,
+  requireUpdaterPort,
+  requireVersionUrl,
+  resolveConfig,
+  updateDotEnv,
+} from "./config";
 import {
   downloadFullZip,
+  downloadManifest,
   downloadPatch,
-  downloadUpdate,
   downloadPatchUpdate,
+  downloadUpdate,
 } from "./downloader";
 import { PatchConfig } from "./types";
+import { checkCurrentVersion, queryCdnConfig } from "./version";
 
 const program = new Command();
 
@@ -19,42 +29,93 @@ program
 // Global options that apply across commands
 program
   .option("--base-url <url>", "Base URL of the patch server / CDN")
-  .option("--cdn-host <host>", "CDN Host of the patch server (e.g. d35293xeakkyq4.cloudfront.net)")
-  .option("--version-url <url>", "URL of the version check endpoint or manifest")
-  .option("--auth-token <token>", "Authorization token for protected endpoints");
+  .option(
+    "--cdn-host <host>",
+    "CDN Host of the patch server (e.g. d35293xeakkyq4.cloudfront.net)"
+  )
+  .option(
+    "--updater-host <host>",
+    "Updater TCP host (e.g. updater.nclauncher.ncsoft.com)"
+  )
+  .option("--updater-port <port>", "Updater TCP port")
+  .option("--game-id <id>", "NCSoft Game ID (e.g. LINEAGE2)")
+  .option(
+    "--version-url <url>",
+    "URL of the version check endpoint or manifest"
+  )
+  .option(
+    "--auth-token <token>",
+    "Authorization token for protected endpoints"
+  );
 
 function buildConfigFromCli(opts: Record<string, unknown>): PatchConfig {
   const globalOpts = program.opts();
-  return {
-    baseUrl: (opts.baseUrl as string) || (globalOpts.baseUrl as string) || undefined,
-    cdnHost: (opts.cdnHost as string) || (globalOpts.cdnHost as string) || undefined,
-    versionUrl: (opts.versionUrl as string) || (globalOpts.versionUrl as string) || undefined,
-    authToken: (opts.authToken as string) || (globalOpts.authToken as string) || undefined,
-  };
+  const cdnHost =
+    (opts.cdnHost as string) || (globalOpts.cdnHost as string) || undefined;
+  const gameId =
+    (opts.gameId as string) || (globalOpts.gameId as string) || undefined;
+  const updaterHost =
+    (opts.updaterHost as string) ||
+    (globalOpts.updaterHost as string) ||
+    undefined;
+  const updaterPortStr =
+    (opts.updaterPort as string) ||
+    (globalOpts.updaterPort as string) ||
+    undefined;
+  const baseUrl =
+    (opts.baseUrl as string) || (globalOpts.baseUrl as string) || undefined;
+  const versionUrl =
+    (opts.versionUrl as string) ||
+    (globalOpts.versionUrl as string) ||
+    undefined;
+  const authToken =
+    (opts.authToken as string) || (globalOpts.authToken as string) || undefined;
+
+  return resolveConfig({
+    baseUrl,
+    cdnHost,
+    updaterHost,
+    updaterPort: updaterPortStr ? parseInt(updaterPortStr, 10) : undefined,
+    gameId,
+    versionUrl,
+    authToken,
+  });
 }
 
-// 0. query current CDN host and base URL
+// 1. Query current CDN host
 program
   .command("cdn")
-  .description("Query the active CDN host and base URL from the updater server (Opcode 0x0003)")
+  .description(
+    "Query the active CDN host from the updater server (Opcode 0x0003)"
+  )
   .option("--json", "Output CDN configuration as JSON")
-  .option("--env", "Output formatted as .env variable (L2_PATCH_BASE_URL=...)")
+  .option("--env", "Output formatted as .env variable (L2_PATCH_CDN_HOST=...)")
+  .option(
+    "--set-env",
+    "Write retrieved CDN host and base URL to local .env file"
+  )
   .action(async (cmdOpts) => {
     try {
       const config = buildConfigFromCli(cmdOpts);
-      const host = config.updaterHost || process.env.L2_PATCH_UPDATER_HOST || "updater.nclauncher.ncsoft.com";
-      const port = config.updaterPort || 27500;
-      const gameId = config.gameId || "LINEAGE2";
+      const host = requireUpdaterHost(config);
+      const port = requireUpdaterPort(config);
+      const gameId = requireGameId(config);
 
       const cdnInfo = await queryCdnConfig(host, port, gameId);
+      if (cmdOpts.setEnv) {
+        updateDotEnv({
+          L2_PATCH_CDN_HOST: cdnInfo.cdnHost,
+          L2_PATCH_BASE_URL: cdnInfo.baseUrl,
+        });
+      }
+
       if (cmdOpts.json) {
         console.log(JSON.stringify(cdnInfo, null, 2));
       } else if (cmdOpts.env) {
-        console.log(`L2_PATCH_BASE_URL=${cdnInfo.baseUrl}`);
         console.log(`L2_PATCH_CDN_HOST=${cdnInfo.cdnHost}`);
+        console.log(`L2_PATCH_BASE_URL=${cdnInfo.baseUrl}`);
       } else {
-        console.log(`Active CDN Host: ${cdnInfo.cdnHost}`);
-        console.log(`Base URL: ${cdnInfo.baseUrl}`);
+        console.log(cdnInfo.cdnHost);
       }
     } catch (err) {
       console.error(`Error querying CDN config: ${(err as Error).message}`);
@@ -62,29 +123,30 @@ program
     }
   });
 
-// 1. check for current version
+// 2. Check for current version
 program
   .command("version")
   .description("Check the latest or current Lineage 2 client patch version")
   .option("--json", "Output version information as JSON")
+  .option("--set-env", "Write retrieved version to local .env file")
   .action(async (cmdOpts) => {
     try {
       const config = buildConfigFromCli(cmdOpts);
-      const updaterHost =
-        config.updaterHost ||
-        process.env.L2_PATCH_UPDATER_HOST ||
-        (!config.versionUrl ? "updater.nclauncher.ncsoft.com" : undefined);
-      const info = await checkCurrentVersion({
-        ...config,
-        ...(updaterHost ? { updaterHost } : {}),
-      });
+      if (!config.versionUrl && !config.updaterHost) {
+        requireVersionUrl(config);
+      }
+
+      const info = await checkCurrentVersion(config);
+      if (cmdOpts.setEnv) {
+        updateDotEnv({
+          L2_PATCH_VERSION: info.version,
+        });
+      }
+
       if (cmdOpts.json) {
         console.log(JSON.stringify(info, null, 2));
       } else {
-        console.log(`Current Patch Version: ${info.version}`);
-        if (info.timestamp) {
-          console.log(`Timestamp: ${info.timestamp}`);
-        }
+        console.log(info.version);
       }
     } catch (err) {
       console.error(`Error checking version: ${(err as Error).message}`);
@@ -92,71 +154,125 @@ program
     }
   });
 
-// 2. download full zip of single file for specified version
+// 3. Download manifest for a specific version
+program
+  .command("manifest")
+  .description("Download manifest for a specific version (or latest)")
+  .option("-v, --version <version>", "Target version to download manifest for")
+  .option(
+    "-l, --latest",
+    "Download manifest for the latest version automatically",
+    true
+  )
+  .option(
+    "-t, --type <type>",
+    "Manifest type: 'patch' (PatchFileInfo) or 'filemap' (FileInfoMap)",
+    "patch"
+  )
+  .option(
+    "-o, --out-dir <dir>",
+    "Directory where the downloaded manifest will be saved",
+    "."
+  )
+  .action(async (cmdOpts) => {
+    try {
+      const config = buildConfigFromCli(cmdOpts);
+      requireBaseUrl(config);
+
+      const savedPath = await downloadManifest(cmdOpts.version, {
+        latest: cmdOpts.latest && !cmdOpts.version,
+        type: cmdOpts.type as "patch" | "filemap",
+        outDir: cmdOpts.outDir,
+        config,
+      });
+      console.log(savedPath);
+    } catch (err) {
+      console.error(`Error downloading manifest: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+// 4. Download full zip or patch delta for a single file
 program
   .command("download")
-  .description("Download full zip of a single client file for a specified version (or latest)")
-  .argument("<filePath>", "Relative client file path (e.g. system/itemname-e.dat)")
-  .option("-v, --version <version>", "Target version to download")
+  .description(
+    "Download full zip or patch delta of a single client file"
+  )
+  .argument(
+    "<filePath>",
+    "Relative client file path (e.g. system/itemname-e.dat)"
+  )
+  .option(
+    "-v, --version <version>",
+    "Target version to download (or 'to' version for patch)"
+  )
+  .option("-t, --to <version>", "Target version for patch (alias for --version)")
+  .option("-f, --from <version>", "Starting version (required when using --patch)")
+  .option("-p, --patch", "Download patch delta instead of full zip", false)
   .option("-l, --latest", "Download the latest version automatically", true)
-  .option("-o, --out-dir <dir>", "Directory where the downloaded file will be saved", ".")
+  .option(
+    "-o, --out-dir <dir>",
+    "Directory where the downloaded file will be saved",
+    "."
+  )
   .action(async (filePath, cmdOpts) => {
     try {
       const config = buildConfigFromCli(cmdOpts);
-      console.info(`Fetching full zip for ${filePath}...`);
-      const savedPath = await downloadFullZip(filePath, {
-        version: cmdOpts.version,
-        latest: cmdOpts.latest && !cmdOpts.version,
-        outDir: cmdOpts.outDir,
-        config,
-      });
-      console.info(`Successfully downloaded: ${savedPath}`);
-    } catch (err) {
-      console.error(`Error downloading file: ${(err as Error).message}`);
-      process.exit(1);
-    }
-  });
+      requireBaseUrl(config);
 
-// 3. download patch file for a single file from version A -> version B
-program
-  .command("patch")
-  .description("Download patch delta file(s) for a client file between two versions")
-  .argument("<filePath>", "Relative client file path (e.g. system/itemname-e.dat)")
-  .requiredOption("-f, --from <version>", "Starting version (version A)")
-  .requiredOption("-t, --to <version>", "Target version (version B)")
-  .option("-o, --out-dir <dir>", "Directory where patch files will be saved", ".")
-  .action(async (filePath, cmdOpts) => {
-    try {
-      const config = buildConfigFromCli(cmdOpts);
-      console.info(`Checking patch for ${filePath} from ${cmdOpts.from} to ${cmdOpts.to}...`);
-      const result = await downloadPatch(filePath, {
-        fromVersion: cmdOpts.from,
-        toVersion: cmdOpts.to,
-        outDir: cmdOpts.outDir,
-        config,
-      });
+      const targetVersion = cmdOpts.to || cmdOpts.version;
 
-      console.info(`Patch strategy resolved: ${result.strategy}`);
-      if (result.isDirect) {
-        console.info(`Direct patch downloaded: ${result.downloadedFiles[0]}`);
-      } else {
-        console.info(`Incremental patch chain (${result.steps.length} steps) downloaded:`);
-        for (const step of result.steps) {
-          console.info(`  ${step.from} -> ${step.to}: ${step.savedPath}`);
+      if (cmdOpts.patch) {
+        if (!cmdOpts.from) {
+          throw new Error(
+            "Missing required --from <version> option when downloading patch."
+          );
         }
+        let toVersion = targetVersion;
+        if (!toVersion) {
+          const latestInfo = await checkCurrentVersion(config);
+          toVersion = latestInfo.version;
+        }
+
+        const result = await downloadPatch(filePath, {
+          fromVersion: cmdOpts.from,
+          toVersion,
+          outDir: cmdOpts.outDir,
+          config,
+        });
+
+        for (const file of result.downloadedFiles) {
+          console.log(file);
+        }
+      } else {
+        const savedPath = await downloadFullZip(filePath, {
+          version: targetVersion,
+          latest: cmdOpts.latest && !targetVersion,
+          outDir: cmdOpts.outDir,
+          config,
+        });
+        console.log(savedPath);
       }
     } catch (err) {
-      console.error(`Error resolving patch: ${(err as Error).message}`);
+      console.error(`Error downloading: ${(err as Error).message}`);
       process.exit(1);
     }
   });
 
-// 4. download full zips for an entire patch update
+// 5. Download full zips or delta patches for an entire patch update
 program
-  .command("update-download")
+  .command("download-version")
   .alias("download-all")
-  .description("Download full zips for an entire patch update (consolidated archive or manifest file list)")
-  .option("-v, --version <version>", "Target version to download")
+  .description(
+    "Download full zips or delta patches for an entire patch update"
+  )
+  .option(
+    "-v, --version <version>",
+    "Target version to download (or 'to' version for patch)"
+  )
+  .option("-t, --to <version>", "Target version for patch (alias for --version)")
+  .option("-f, --from <version>", "Starting version (required when using --patch)")
+  .option("-p, --patch", "Download patch deltas instead of full zips", false)
   .option("-l, --latest", "Download the latest version automatically", true)
   .option("-m, --manifest <pathOrUrl>", "Path or URL to update manifest / filelist")
   .option("-c, --concurrency <number>", "Number of concurrent downloads", "4")
@@ -164,65 +280,64 @@ program
   .action(async (cmdOpts) => {
     try {
       const config = buildConfigFromCli(cmdOpts);
-      console.info("Starting entire patch update download...");
-      const result = await downloadUpdate({
-        version: cmdOpts.version,
-        latest: cmdOpts.latest && !cmdOpts.version,
-        manifestPathOrUrl: cmdOpts.manifest,
-        concurrency: parseInt(cmdOpts.concurrency, 10),
-        outDir: cmdOpts.outDir,
-        config,
-      });
+      requireBaseUrl(config);
 
-      console.info(`Mode: ${result.mode}`);
-      console.info(`Total files processed: ${result.downloadedFiles.length}/${result.totalFiles}`);
-      if (result.failedFiles.length > 0) {
-        console.warn(`Failed downloads (${result.failedFiles.length}):`);
-        for (const fail of result.failedFiles) {
-          console.warn(`  - ${fail.file}: ${fail.error}`);
+      const targetVersion = cmdOpts.to || cmdOpts.version;
+
+      if (cmdOpts.patch) {
+        if (!cmdOpts.from) {
+          throw new Error(
+            "Missing required --from <version> option when downloading patch update."
+          );
         }
-        process.exit(1);
+        let toVersion = targetVersion;
+        if (!toVersion) {
+          const latestInfo = await checkCurrentVersion(config);
+          toVersion = latestInfo.version;
+        }
+
+        const result = await downloadPatchUpdate({
+          fromVersion: cmdOpts.from,
+          toVersion,
+          manifestPathOrUrl: cmdOpts.manifest,
+          concurrency: parseInt(cmdOpts.concurrency, 10),
+          outDir: cmdOpts.outDir,
+          config,
+        });
+
+        console.log(`Mode: ${result.mode}`);
+        console.log(`Total files downloaded: ${result.downloadedFiles.length}`);
+        if (result.failedFiles.length > 0) {
+          console.warn(`Failed patches (${result.failedFiles.length}):`);
+          for (const fail of result.failedFiles) {
+            console.warn(`  - ${fail.file}: ${fail.error}`);
+          }
+          process.exit(1);
+        }
+      } else {
+        const result = await downloadUpdate({
+          version: targetVersion,
+          latest: cmdOpts.latest && !targetVersion,
+          manifestPathOrUrl: cmdOpts.manifest,
+          concurrency: parseInt(cmdOpts.concurrency, 10),
+          outDir: cmdOpts.outDir,
+          config,
+        });
+
+        console.log(`Mode: ${result.mode}`);
+        console.log(
+          `Total files processed: ${result.downloadedFiles.length}/${result.totalFiles}`
+        );
+        if (result.failedFiles.length > 0) {
+          console.warn(`Failed downloads (${result.failedFiles.length}):`);
+          for (const fail of result.failedFiles) {
+            console.warn(`  - ${fail.file}: ${fail.error}`);
+          }
+          process.exit(1);
+        }
       }
     } catch (err) {
-      console.error(`Error downloading entire update: ${(err as Error).message}`);
-      process.exit(1);
-    }
-  });
-
-// 5. download delta patches for an entire patch update from version A to version B
-program
-  .command("update-patch")
-  .alias("patch-all")
-  .description("Download patch delta files for an entire update between two versions")
-  .requiredOption("-f, --from <version>", "Starting version (version A)")
-  .requiredOption("-t, --to <version>", "Target version (version B)")
-  .option("-m, --manifest <pathOrUrl>", "Path or URL to update manifest / filelist")
-  .option("-c, --concurrency <number>", "Number of concurrent downloads", "4")
-  .option("-o, --out-dir <dir>", "Directory where patch files will be saved", ".")
-  .action(async (cmdOpts) => {
-    try {
-      const config = buildConfigFromCli(cmdOpts);
-      console.info(`Starting bulk patch update from ${cmdOpts.from} to ${cmdOpts.to}...`);
-      const result = await downloadPatchUpdate({
-        fromVersion: cmdOpts.from,
-        toVersion: cmdOpts.to,
-        manifestPathOrUrl: cmdOpts.manifest,
-        concurrency: parseInt(cmdOpts.concurrency, 10),
-        outDir: cmdOpts.outDir,
-        config,
-      });
-
-      console.info(`Mode: ${result.mode}`);
-      console.info(`Total files downloaded: ${result.downloadedFiles.length}`);
-      if (result.failedFiles.length > 0) {
-        console.warn(`Failed patches (${result.failedFiles.length}):`);
-        for (const fail of result.failedFiles) {
-          console.warn(`  - ${fail.file}: ${fail.error}`);
-        }
-        process.exit(1);
-      }
-    } catch (err) {
-      console.error(`Error downloading patch update: ${(err as Error).message}`);
+      console.error(`Error downloading version: ${(err as Error).message}`);
       process.exit(1);
     }
   });

@@ -33,20 +33,18 @@ npm install -g @l2utils/l2patch
 
 ## Configuration & Environment Variables
 
-Because this repository is public, CDN URLs and endpoints are never hardcoded. Commands that download files require CDN configuration provided either via:
-1. **CLI Parameter**: `--base-url <url>` or `--cdn-host <host>`
-2. **Environment Variable**: `L2_PATCH_BASE_URL` or `L2_PATCH_CDN_HOST` (e.g. in a `.env` file)
-3. **Live Query**: Run `npx l2patch cdn --env >> .env` before running updates.
+Because this repository is public, CDN URLs, updater endpoints, and game credentials are never hardcoded. Commands require configuration provided via CLI parameters or environment variables (e.g. in a `.env` file). If a required variable is undefined, the CLI will cleanly error out.
 
-| Environment Variable | Description |
-| :--- | :--- |
-| `L2_PATCH_UPDATER_HOST` | NCSoft updater TCP server (default: `updater.nclauncher.ncsoft.com`). |
-| `L2_PATCH_UPDATER_PORT` | NCSoft updater TCP port (default: `27500`). |
-| `L2_PATCH_GAME_ID` | Game service identifier (default: `LINEAGE2`). |
-| `L2_PATCH_BASE_URL` | Base CDN URL where patch zips and deltas are served. |
-| `L2_PATCH_CDN_HOST` | Hostname of the patch CDN (e.g. `d35293xeakkyq4.cloudfront.net`). |
-| `L2_PATCH_VERSION_URL` | *(Optional)* URL of the version check endpoint or JSON manifest. |
-| `L2_PATCH_AUTH_TOKEN` | *(Optional)* Authorization bearer token or key for protected endpoints. |
+| Environment Variable | Description | Required By |
+| :--- | :--- | :--- |
+| `L2_PATCH_UPDATER_HOST` | NCSoft updater TCP server host. | `cdn`, `version` (TCP mode) |
+| `L2_PATCH_UPDATER_PORT` | NCSoft updater TCP server port. | `cdn`, `version` (TCP mode) |
+| `L2_PATCH_GAME_ID` | Game service identifier (e.g. `LINEAGE2`). | `cdn`, `version` (TCP mode), `manifest` |
+| `L2_PATCH_CDN_HOST` | Hostname of the patch CDN (e.g. `d35293xeakkyq4.cloudfront.net`). | Derives `baseUrl` |
+| `L2_PATCH_BASE_URL` | Base CDN URL where patch zips and deltas are served. | `download`, `manifest`, `download-version` |
+| `L2_PATCH_VERSION` | Client patch version identifier. | Stored by `version --set-env` |
+| `L2_PATCH_VERSION_URL` | *(Optional)* URL of the version check endpoint or JSON manifest. | `version` (HTTP mode) |
+| `L2_PATCH_AUTH_TOKEN` | *(Optional)* Authorization bearer token or key for protected endpoints. | Any command |
 
 ---
 
@@ -54,54 +52,70 @@ Because this repository is public, CDN URLs and endpoints are never hardcoded. C
 
 ### 1. Query Active CDN Host
 
-Queries the updater server (Opcode `0x0003`) for the current live CDN hostname:
+Queries the updater server (Opcode `0x0003`) and outputs the raw CDN hostname:
 
 ```sh
-# Plain text
+# Raw CDN hostname output (no labels)
 npx l2patch cdn
+
+# Automatically persist retrieved CDN host and base URL into local .env
+npx l2patch cdn --set-env
 
 # JSON format
 npx l2patch cdn --json
 
-# Export to .env file directly
-npx l2patch cdn --env >> .env
+# Export to .env format
+npx l2patch cdn --env
 ```
 
 ### 2. Check Current Version
 
+Queries the latest patch version and outputs the raw version number:
+
 ```sh
-# Plain text output
+# Raw version output (no labels)
 npx l2patch version
+
+# Automatically persist retrieved version into local .env
+npx l2patch version --set-env
 
 # JSON output
 npx l2patch version --json
 ```
 
-### 3. Download Full File Zip
+### 3. Download Manifest
+
+Download `PatchFileInfo` or `FileInfoMap` catalog for a specific version or latest:
 
 ```sh
-# Download latest version of a file (using .env or --cdn-host)
-npx l2patch download --latest system/itemname-e.dat --out-dir ./downloads
+# Download PatchFileInfo manifest for version 599
+npx l2patch manifest -v 599 --out-dir ./manifests
 
-# Download specific version with explicit CDN host parameter
-npx l2patch download system/itemname-e.dat --version 599 --cdn-host d35293xeakkyq4.cloudfront.net --out-dir ./downloads
+# Download FileInfoMap manifest for the latest version
+npx l2patch manifest --type filemap --latest --out-dir ./manifests
 ```
 
-### 4. Download Delta Patch
+### 4. Download Single File (Full Zip or Delta Patch)
 
 ```sh
-# Check and download patch from version 598 to 599
-npx l2patch patch system/itemname-e.dat --from 598 --to 599 --out-dir ./patches
+# Download full zip for latest version
+npx l2patch download system/itemname-e.dat --latest --out-dir ./downloads
+
+# Download full zip for specific version
+npx l2patch download system/itemname-e.dat -v 599 --out-dir ./downloads
+
+# Download delta patch between version 598 and 599
+npx l2patch download system/itemname-e.dat --patch --from 598 --to 599 --out-dir ./patches
 ```
 
-### 5. Download Entire Patch Update
+### 5. Download Entire Patch Update (Full Zips or Delta Patches)
 
 ```sh
 # Download all full file zips for the latest update
-npx l2patch update-download --latest --concurrency 6 --out-dir ./client
+npx l2patch download-version --latest --concurrency 6 --out-dir ./client
 
 # Download all delta patches from version 598 to 599
-npx l2patch update-patch --from 598 --to 599 --concurrency 6 --out-dir ./patches
+npx l2patch download-version --patch --from 598 --to 599 --concurrency 6 --out-dir ./patches
 ```
 
 ---
