@@ -2,8 +2,17 @@ import * as readline from "readline";
 import {
   ActiveFileDownload,
   BatchDownloadProgress,
+  DownloadCompleteInfo,
   FileDownloadProgress,
 } from "./types";
+
+/**
+ * Formats a download completion log message: source -> destination (filesize, average download speed).
+ */
+export function formatDownloadLog(info: DownloadCompleteInfo): string {
+  const speedStr = `${formatBytes(info.averageSpeed)}/s`;
+  return `${info.source} -> ${info.destination} (${formatBytes(info.bytes)}, ${speedStr})`;
+}
 
 /**
  * Formats a byte count into human-readable string (e.g. 1.25 MB).
@@ -93,6 +102,7 @@ export class FileProgressReporter {
   private lastTotal?: number;
   private isFinished: boolean = false;
   private hasLoggedStart: boolean = false;
+  private hasLoggedComplete: boolean = false;
 
   constructor(options?: ProgressReporterOptions) {
     this.stream = options?.stream ?? process.stderr;
@@ -126,28 +136,59 @@ export class FileProgressReporter {
     }
   }
 
-  public finish(summary?: string): void {
-    if (!this.enabled || this.isFinished) return;
-    this.isFinished = true;
-
+  public logDownload(info: DownloadCompleteInfo): void {
+    if (!this.enabled) return;
+    this.hasLoggedComplete = true;
+    const line = formatDownloadLog(info);
     if (this.isDynamic) {
-      // Clear line and write final summary or newline
       try {
         readline.cursorTo(this.stream, 0);
         readline.clearLine(this.stream, 0);
-        if (summary) {
-          this.stream.write(`${summary}\n`);
-        }
+        this.stream.write(`${line}\n`);
       } catch {
-        if (summary) {
-          this.stream.write(`${summary}\n`);
-        } else {
-          this.stream.write("\n");
-        }
+        this.stream.write(`\r${line}\n`);
       }
-    } else if (summary) {
-      this.stream.write(`${summary}\n`);
-    } else if (this.lastReceived > 0) {
+    } else {
+      this.stream.write(`${line}\n`);
+    }
+  }
+
+  public finish(summary?: string | DownloadCompleteInfo): void {
+    if (!this.enabled || this.isFinished) return;
+    this.isFinished = true;
+
+    if (summary) {
+      this.hasLoggedComplete = true;
+      const summaryText =
+        typeof summary === "object" ? formatDownloadLog(summary) : summary;
+      if (this.isDynamic) {
+        try {
+          readline.cursorTo(this.stream, 0);
+          readline.clearLine(this.stream, 0);
+          this.stream.write(`${summaryText}\n`);
+        } catch {
+          this.stream.write(`\r${summaryText}\n`);
+        }
+      } else {
+        this.stream.write(`${summaryText}\n`);
+      }
+      return;
+    }
+
+    if (this.hasLoggedComplete) {
+      return;
+    }
+
+    if (this.isDynamic) {
+      try {
+        readline.cursorTo(this.stream, 0);
+        readline.clearLine(this.stream, 0);
+      } catch {
+        // ignore
+      }
+    }
+
+    if (this.lastReceived > 0) {
       const name = this.label || "file";
       const totalStr = this.lastTotal
         ? ` (${formatBytes(this.lastTotal)})`
@@ -257,6 +298,7 @@ export class BatchProgressReporter {
   private renderedLines: number = 0;
   private isFinished: boolean = false;
   private hasLoggedStart: boolean = false;
+  private lastProgress?: BatchDownloadProgress;
 
   constructor(options?: ProgressReporterOptions) {
     this.stream = options?.stream ?? process.stderr;
@@ -271,6 +313,7 @@ export class BatchProgressReporter {
   public update(progress: BatchDownloadProgress): void {
     if (!this.enabled || this.isFinished) return;
 
+    this.lastProgress = progress;
     const now = Date.now();
 
     if (this.isDynamic) {
@@ -284,6 +327,25 @@ export class BatchProgressReporter {
       this.renderDynamic(progress);
     } else {
       this.renderStatic(progress);
+    }
+  }
+
+  public logDownload(info: DownloadCompleteInfo): void {
+    if (!this.enabled) return;
+    const line = formatDownloadLog(info);
+    if (this.isDynamic) {
+      this.clearDynamicLines();
+      this.stream.write(`${line}\n`);
+      if (
+        !this.isFinished &&
+        this.lastProgress &&
+        this.lastProgress.completedFiles + this.lastProgress.failedFiles <
+          this.lastProgress.totalFiles
+      ) {
+        this.renderDynamic(this.lastProgress);
+      }
+    } else {
+      this.stream.write(`${line}\n`);
     }
   }
 

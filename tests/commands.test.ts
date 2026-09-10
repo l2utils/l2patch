@@ -84,6 +84,11 @@ describe("CLI commands", () => {
       expect(stdoutChunks.join("")).toBe("dummy-zip-data");
       // stdout must NOT contain progress strings
       expect(stdoutChunks.join("")).not.toContain("Downloading");
+      // stderr must contain download log with source -> destination, filesize, speed
+      expect(stderrChunks.join("")).toContain(
+        "https://cdn.example.com/140/Patch/Zip/system/itemname-e.dat.zip -> <stdout>"
+      );
+      expect(stderrChunks.join("")).toContain("14 B");
     });
 
     test("downloads patch delta to output file", async () => {
@@ -192,6 +197,8 @@ describe("CLI commands", () => {
       expect(optionNames).toContain("version");
       expect(optionNames).toContain("latest");
       expect(optionNames).toContain("output");
+      expect(optionNames).toContain("progress");
+      expect(optionNames).toContain("no-progress");
     });
 
     test("downloads FileInfoMap to stdout", async () => {
@@ -256,6 +263,7 @@ describe("CLI commands", () => {
         "140",
         "-o",
         dest,
+        "--no-progress",
       ]);
 
       expect(fs.existsSync(dest)).toBe(true);
@@ -271,6 +279,8 @@ describe("CLI commands", () => {
       expect(optionNames).toContain("version");
       expect(optionNames).toContain("latest");
       expect(optionNames).toContain("output");
+      expect(optionNames).toContain("progress");
+      expect(optionNames).toContain("no-progress");
     });
 
     test("downloads PatchFileInfo to stdout", async () => {

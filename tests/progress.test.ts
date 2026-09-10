@@ -2,11 +2,13 @@ import { Writable } from "stream";
 import {
   formatBytes,
   formatDuration,
+  formatDownloadLog,
   isProgressSupported,
   renderProgressBar,
   FileProgressReporter,
   BatchProgressReporter,
 } from "../src/progress";
+import { DownloadCompleteInfo } from "../src/types";
 
 class MockWriteStream extends Writable {
   public output: string[] = [];
@@ -52,6 +54,35 @@ describe("progress utilities", () => {
       expect(formatBytes(10.5 * 1024 * 1024)).toBe("10.5 MB");
       expect(formatBytes(1024 * 1024 * 1024)).toBe("1.00 GB");
       expect(formatBytes(2.5 * 1024 * 1024 * 1024 * 1024)).toBe("2.50 TB");
+    });
+  });
+
+  describe("formatDownloadLog", () => {
+    test("formats source, destination, size, and speed correctly", () => {
+      const info: DownloadCompleteInfo = {
+        source: "http://example.com/file.zip",
+        destination: "/local/path/file.zip",
+        bytes: 1048576,
+        durationMs: 500,
+        averageSpeed: 2097152,
+      };
+      const result = formatDownloadLog(info);
+      expect(result).toBe(
+        "http://example.com/file.zip -> /local/path/file.zip (1.00 MB, 2.00 MB/s)"
+      );
+    });
+
+    test("handles zero bytes or small files", () => {
+      const info: DownloadCompleteInfo = {
+        source: "http://example.com/empty.dat",
+        destination: "/dest/empty.dat",
+        bytes: 0,
+        durationMs: 10,
+        averageSpeed: 0,
+      };
+      expect(formatDownloadLog(info)).toBe(
+        "http://example.com/empty.dat -> /dest/empty.dat (0 B, 0 B/s)"
+      );
     });
   });
 
@@ -288,6 +319,84 @@ describe("FileProgressReporter", () => {
     reporter.finish("Should not appear");
     expect(mock.getJoined()).toBe("");
   });
+
+  test("logDownload writes formatted log in static and dynamic mode", () => {
+    const mock = new MockWriteStream();
+    const reporter = new FileProgressReporter({
+      stream: mock as any,
+      isDynamic: false,
+    });
+
+    const info: DownloadCompleteInfo = {
+      source: "http://example.com/item.zip",
+      destination: "/out/item.zip",
+      bytes: 1048576,
+      durationMs: 1000,
+      averageSpeed: 1048576,
+    };
+
+    reporter.logDownload(info);
+    expect(mock.getJoined()).toContain(
+      "http://example.com/item.zip -> /out/item.zip (1.00 MB, 1.00 MB/s)\n"
+    );
+
+    // Dynamic mode
+    mock.clear();
+    mock.isTTY = true;
+    const dynamicReporter = new FileProgressReporter({
+      stream: mock as any,
+      isDynamic: true,
+    });
+    dynamicReporter.logDownload(info);
+    expect(mock.getJoined()).toContain(
+      "http://example.com/item.zip -> /out/item.zip (1.00 MB, 1.00 MB/s)\n"
+    );
+  });
+
+  test("finish with DownloadCompleteInfo formats and logs completion", () => {
+    const mock = new MockWriteStream();
+    const reporter = new FileProgressReporter({
+      stream: mock as any,
+      isDynamic: false,
+    });
+
+    const info: DownloadCompleteInfo = {
+      source: "http://example.com/item.zip",
+      destination: "/out/item.zip",
+      bytes: 2048,
+      durationMs: 500,
+      averageSpeed: 4096,
+    };
+
+    reporter.finish(info);
+    expect(mock.getJoined()).toContain(
+      "http://example.com/item.zip -> /out/item.zip (2.00 KB, 4.00 KB/s)\n"
+    );
+  });
+
+  test("finish after logDownload does not duplicate log", () => {
+    const mock = new MockWriteStream();
+    const reporter = new FileProgressReporter({
+      stream: mock as any,
+      isDynamic: false,
+      label: "item.zip",
+    });
+
+    reporter.update({ receivedBytes: 1000, totalBytes: 1000 });
+    const info: DownloadCompleteInfo = {
+      source: "http://example.com/item.zip",
+      destination: "/out/item.zip",
+      bytes: 1000,
+      durationMs: 200,
+      averageSpeed: 5000,
+    };
+    reporter.logDownload(info);
+    const afterLog = mock.getJoined();
+
+    reporter.finish();
+    // Finish should not append "Download complete: item.zip" because logDownload already emitted
+    expect(mock.getJoined()).toBe(afterLog);
+  });
 });
 
 describe("BatchProgressReporter", () => {
@@ -423,5 +532,50 @@ describe("BatchProgressReporter", () => {
     });
     reporter.finish("Finished");
     expect(mock.getJoined()).toBe("");
+  });
+
+  test("logDownload in static and dynamic modes", () => {
+    const mock = new MockWriteStream();
+    const reporter = new BatchProgressReporter({
+      stream: mock as any,
+      isDynamic: false,
+    });
+
+    const info: DownloadCompleteInfo = {
+      source: "http://example.com/item.zip",
+      destination: "/client/item.zip",
+      bytes: 2097152,
+      durationMs: 500,
+      averageSpeed: 4194304,
+    };
+
+    reporter.logDownload(info);
+    expect(mock.getJoined()).toContain(
+      "http://example.com/item.zip -> /client/item.zip (2.00 MB, 4.00 MB/s)\n"
+    );
+
+    // Dynamic mode with active files to re-render
+    mock.clear();
+    mock.isTTY = true;
+    const dynamicReporter = new BatchProgressReporter({
+      stream: mock as any,
+      isDynamic: true,
+      throttleMs: 0,
+    });
+
+    dynamicReporter.update({
+      totalFiles: 2,
+      completedFiles: 0,
+      failedFiles: 0,
+      activeFiles: [{ file: "remaining.dat", receivedBytes: 100, totalBytes: 200 }],
+    });
+    mock.clear();
+
+    dynamicReporter.logDownload(info);
+    const output = mock.getJoined();
+    expect(output).toContain(
+      "http://example.com/item.zip -> /client/item.zip (2.00 MB, 4.00 MB/s)\n"
+    );
+    expect(output).toContain("remaining.dat");
   });
 });

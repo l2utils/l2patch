@@ -53,6 +53,16 @@ export interface BatchDownloadProgress {
 
 export type BatchProgressCallback = (progress: BatchDownloadProgress) => void;
 
+export interface DownloadCompleteInfo {
+  source: string;
+  destination: string;
+  bytes: number;
+  durationMs: number;
+  averageSpeed: number;
+}
+
+export type DownloadCompleteCallback = (info: DownloadCompleteInfo) => void;
+
 export interface DownloadFileOptions {
   version?: string;
   latest?: boolean;
@@ -63,6 +73,7 @@ export interface DownloadFileOptions {
   retryDelayMs?: number;
   skipExisting?: boolean;
   onProgress?: FileProgressCallback;
+  onComplete?: DownloadCompleteCallback;
 }
 
 export interface DownloadManifestOptions {
@@ -74,6 +85,7 @@ export interface DownloadManifestOptions {
   maxRetries?: number;
   retryDelayMs?: number;
   onProgress?: FileProgressCallback;
+  onComplete?: DownloadCompleteCallback;
 }
 
 export interface PatchOptions {
@@ -85,6 +97,7 @@ export interface PatchOptions {
   retryDelayMs?: number;
   skipExisting?: boolean;
   onProgress?: FileProgressCallback;
+  onComplete?: DownloadCompleteCallback;
 }
 
 export interface PatchStep {
@@ -119,6 +132,8 @@ export interface UpdateDownloadOptions {
   skipExisting?: boolean;
   onProgress?: BatchProgressCallback;
   onFileProgress?: FileProgressCallback;
+  onComplete?: DownloadCompleteCallback;
+  onFileComplete?: DownloadCompleteCallback;
 }
 
 export interface UpdatePatchOptions {
@@ -136,6 +151,8 @@ export interface UpdatePatchOptions {
   skipExisting?: boolean;
   onProgress?: BatchProgressCallback;
   onFileProgress?: FileProgressCallback;
+  onComplete?: DownloadCompleteCallback;
+  onFileComplete?: DownloadCompleteCallback;
 }
 
 

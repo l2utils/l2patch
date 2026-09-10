@@ -4,6 +4,8 @@ import { requireBaseUrl, resolveConfig } from "./config";
 import {
   ActiveFileDownload,
   BulkDownloadResult,
+  DownloadCompleteCallback,
+  DownloadCompleteInfo,
   DownloadFileOptions,
   DownloadManifestOptions,
   FileDownloadProgress,
@@ -367,6 +369,7 @@ export async function downloadToFile(
     retryDelayMs?: number;
     skipExisting?: boolean;
     onProgress?: FileProgressCallback;
+    onComplete?: DownloadCompleteCallback;
   }
 ): Promise<string> {
   if (options?.skipExisting && fs.existsSync(destinationPath)) {
@@ -380,6 +383,7 @@ export async function downloadToFile(
     }
   }
 
+  const startTime = Date.now();
   const buffer = await downloadToBuffer(url, authToken, options, (p) => {
     options?.onProgress?.({ ...p, filePath: destinationPath });
   });
@@ -390,6 +394,17 @@ export async function downloadToFile(
   }
 
   fs.writeFileSync(destinationPath, buffer);
+
+  const durationMs = Math.max(1, Date.now() - startTime);
+  const averageSpeed = buffer.length / (durationMs / 1000);
+  options?.onComplete?.({
+    source: url,
+    destination: destinationPath,
+    bytes: buffer.length,
+    durationMs,
+    averageSpeed,
+  });
+
   return destinationPath;
 }
 
@@ -543,7 +558,8 @@ export async function fetchFullZip(
   const onProgress = options?.onProgress
     ? (p: FileDownloadProgress) => options.onProgress!({ ...p, filePath })
     : undefined;
-  return downloadToBuffer(
+  const startTime = Date.now();
+  const buffer = await downloadToBuffer(
     url,
     config.authToken,
     {
@@ -552,6 +568,20 @@ export async function fetchFullZip(
     },
     onProgress
   );
+
+  if (options?.onComplete) {
+    const durationMs = Math.max(1, Date.now() - startTime);
+    const averageSpeed = buffer.length / (durationMs / 1000);
+    options.onComplete({
+      source: url,
+      destination: options.outDir || "<stdout>",
+      bytes: buffer.length,
+      durationMs,
+      averageSpeed,
+    });
+  }
+
+  return buffer;
 }
 
 /**
@@ -582,6 +612,7 @@ export async function downloadFullZip(
     retryDelayMs: options?.retryDelayMs ?? config.retryDelayMs,
     skipExisting: options?.skipExisting,
     onProgress,
+    onComplete: options?.onComplete,
   });
 }
 
@@ -603,7 +634,8 @@ export async function fetchManifest(
 
   const type = options?.type || "patch";
   const url = buildManifestUrl(targetVersion, config, type);
-  return downloadToBuffer(
+  const startTime = Date.now();
+  const buffer = await downloadToBuffer(
     url,
     config.authToken,
     {
@@ -612,6 +644,20 @@ export async function fetchManifest(
     },
     options?.onProgress
   );
+
+  if (options?.onComplete) {
+    const durationMs = Math.max(1, Date.now() - startTime);
+    const averageSpeed = buffer.length / (durationMs / 1000);
+    options.onComplete({
+      source: url,
+      destination: options.outDir || "<stdout>",
+      bytes: buffer.length,
+      durationMs,
+      averageSpeed,
+    });
+  }
+
+  return buffer;
 }
 
 /**
@@ -644,6 +690,7 @@ export async function downloadManifest(
     maxRetries: options?.maxRetries ?? config.maxRetries,
     retryDelayMs: options?.retryDelayMs ?? config.retryDelayMs,
     onProgress: options?.onProgress,
+    onComplete: options?.onComplete,
   });
 }
 
@@ -708,7 +755,20 @@ export async function fetchPatch(
     const onProgress = options?.onProgress
       ? (p: FileDownloadProgress) => options.onProgress!({ ...p, filePath })
       : undefined;
-    return downloadToBuffer(directUrl, config.authToken, retryOpts, onProgress);
+    const startTime = Date.now();
+    const buffer = await downloadToBuffer(directUrl, config.authToken, retryOpts, onProgress);
+    if (options?.onComplete) {
+      const durationMs = Math.max(1, Date.now() - startTime);
+      const averageSpeed = buffer.length / (durationMs / 1000);
+      options.onComplete({
+        source: directUrl,
+        destination: options.outDir || "<stdout>",
+        bytes: buffer.length,
+        durationMs,
+        averageSpeed,
+      });
+    }
+    return buffer;
   }
 
   throw new Error(
@@ -750,7 +810,10 @@ export async function downloadPatch(
       directUrl,
       destination,
       config.authToken,
-      retryOpts
+      {
+        ...retryOpts,
+        onComplete: options.onComplete,
+      }
     );
 
     return {
@@ -803,7 +866,10 @@ export async function downloadPatch(
       stepUrl,
       destination,
       config.authToken,
-      retryOpts
+      {
+        ...retryOpts,
+        onComplete: options.onComplete,
+      }
     );
 
 
@@ -884,6 +950,10 @@ export async function downloadUpdate(
                 },
               ],
             });
+          },
+          onComplete: (info) => {
+            options?.onFileComplete?.(info);
+            options?.onComplete?.(info);
           },
         }
       );
@@ -970,6 +1040,9 @@ export async function downloadUpdate(
             options?.onFileProgress?.(p);
             notifyProgress();
           },
+          onComplete: (info) => {
+            options?.onFileComplete?.(info);
+          },
         });
         downloadedFiles.push(saved);
         completedCount++;
@@ -1045,6 +1118,10 @@ export async function downloadPatchUpdate(
                 },
               ],
             });
+          },
+          onComplete: (info) => {
+            options?.onFileComplete?.(info);
+            options?.onComplete?.(info);
           },
         }
       );
@@ -1132,6 +1209,9 @@ export async function downloadPatchUpdate(
             });
             options?.onFileProgress?.(p);
             notifyProgress();
+          },
+          onComplete: (info) => {
+            options?.onFileComplete?.(info);
           },
         });
         downloadedFiles.push(...result.downloadedFiles);

@@ -42,7 +42,7 @@ export function createDownloadCommand(): Command {
       "Skip downloading if output file already exists locally",
       false
     )
-    .option("--progress", "Display download progress")
+    .option("--progress", "Display download progress", true)
     .option("--no-progress", "Disable download progress")
     .action(async (filePath, cmdOpts, cmd) => {
       try {
@@ -51,9 +51,11 @@ export function createDownloadCommand(): Command {
 
         const targetVersion = cmdOpts.to || cmdOpts.version;
         const maxRetries = parseInt(cmdOpts.retries, 10);
+        const dest = cmdOpts.output
+          ? path.resolve(process.cwd(), cmdOpts.output)
+          : "<stdout>";
 
         if (cmdOpts.output && cmdOpts.skipExisting) {
-          const dest = path.resolve(process.cwd(), cmdOpts.output);
           if (fs.existsSync(dest) && fs.statSync(dest).size > 0) {
             return;
           }
@@ -81,17 +83,21 @@ export function createDownloadCommand(): Command {
           buffer = await fetchPatch(filePath, {
             fromVersion: cmdOpts.from,
             toVersion,
+            outDir: dest,
             config,
             maxRetries,
             onProgress: (p) => reporter.update(p),
+            onComplete: (info) => reporter.logDownload(info),
           });
         } else {
           buffer = await fetchFullZip(filePath, {
             version: targetVersion,
             latest: cmdOpts.latest && !targetVersion,
+            outDir: dest,
             config,
             maxRetries,
             onProgress: (p) => reporter.update(p),
+            onComplete: (info) => reporter.logDownload(info),
           });
         }
 
