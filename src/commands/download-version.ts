@@ -52,7 +52,7 @@ export function createDownloadVersionCommand(): Command {
       false
     )
     .option("-o, --out-dir <dir>", "Directory where files will be saved", ".")
-    .option("--progress", "Display download progress")
+    .option("--progress", "Display download progress", true)
     .option("--no-progress", "Disable download progress")
     .action(async (cmdOpts, cmd) => {
       try {
@@ -106,6 +106,7 @@ export function createDownloadVersionCommand(): Command {
             outDir: cmdOpts.outDir,
             config,
             onProgress: (p) => reporter.update(p),
+            onFileComplete: (info) => reporter.logDownload(info),
           });
 
           reporter.finish();
@@ -132,6 +133,7 @@ export function createDownloadVersionCommand(): Command {
             outDir: cmdOpts.outDir,
             config,
             onProgress: (p) => reporter.update(p),
+            onFileComplete: (info) => reporter.logDownload(info),
           });
 
           reporter.finish();

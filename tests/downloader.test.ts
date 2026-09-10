@@ -1509,4 +1509,121 @@ describe("downloader", () => {
       expect(global.fetch).toHaveBeenCalledTimes(3);
     });
   });
+
+  describe("download completion callbacks", () => {
+    test("downloadToFile calls onComplete with source, destination, size, and speed", async () => {
+      const fileData = "test content for onComplete";
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-length": String(fileData.length) }),
+        arrayBuffer: async () => createMockArrayBuffer(fileData),
+      });
+
+      const onComplete = jest.fn();
+      const dest = path.join(testOutDir, "complete_test.dat");
+
+      await downloadToFile("https://cdn.example.com/test.dat", dest, undefined, {
+        onComplete,
+      });
+
+      expect(onComplete).toHaveBeenCalledTimes(1);
+      const info = onComplete.mock.calls[0][0];
+      expect(info.source).toBe("https://cdn.example.com/test.dat");
+      expect(info.destination).toBe(dest);
+      expect(info.bytes).toBe(fileData.length);
+      expect(info.durationMs).toBeGreaterThanOrEqual(1);
+      expect(info.averageSpeed).toBeGreaterThan(0);
+    });
+
+    test("fetchFullZip calls onComplete when provided", async () => {
+      const fileData = "fetch-full-zip-content";
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-length": String(fileData.length) }),
+        arrayBuffer: async () => createMockArrayBuffer(fileData),
+      });
+
+      const onComplete = jest.fn();
+      await fetchFullZip("system/itemname-e.dat", {
+        version: "140",
+        config: { baseUrl: "https://cdn.example.com" },
+        onComplete,
+      });
+
+      expect(onComplete).toHaveBeenCalledTimes(1);
+      const info = onComplete.mock.calls[0][0];
+      expect(info.source).toBe("https://cdn.example.com/140/Patch/Zip/system/itemname-e.dat.zip");
+      expect(info.destination).toBe("<stdout>");
+      expect(info.bytes).toBe(fileData.length);
+      expect(info.averageSpeed).toBeGreaterThan(0);
+    });
+
+    test("downloadFullZip passes onComplete to downloadToFile", async () => {
+      const fileData = "download-full-zip-content";
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-length": String(fileData.length) }),
+        arrayBuffer: async () => createMockArrayBuffer(fileData),
+      });
+
+      const onComplete = jest.fn();
+      const saved = await downloadFullZip("system/itemname-e.dat", {
+        version: "140",
+        outDir: testOutDir,
+        config: { baseUrl: "https://cdn.example.com" },
+        onComplete,
+      });
+
+      expect(onComplete).toHaveBeenCalledTimes(1);
+      expect(onComplete.mock.calls[0][0].destination).toBe(saved);
+    });
+
+    test("downloadUpdate invokes onFileComplete for each downloaded file", async () => {
+      const manifest = "system/itemname-e.dat\nsystem/armorgrp.dat";
+      const fileData = "zip-data";
+
+      global.fetch = jest
+        .fn()
+        // probe archive -> 404
+        .mockResolvedValueOnce({ ok: false, status: 404 } as unknown as Response)
+        // fetch manifest -> 200
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          arrayBuffer: async () => createMockArrayBuffer(manifest),
+        } as unknown as Response)
+        // download file 1 -> 200
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-length": String(fileData.length) }),
+          arrayBuffer: async () => createMockArrayBuffer(fileData),
+        } as unknown as Response)
+        // download file 2 -> 200
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: new Headers({ "content-length": String(fileData.length) }),
+          arrayBuffer: async () => createMockArrayBuffer(fileData),
+        } as unknown as Response);
+
+      const onFileComplete = jest.fn();
+      const result = await downloadUpdate({
+        version: "140",
+        outDir: testOutDir,
+        concurrency: 1,
+        config: { baseUrl: "https://cdn.example.com" },
+        onFileComplete,
+      });
+
+      expect(result.downloadedFiles.length).toBe(2);
+      expect(onFileComplete).toHaveBeenCalledTimes(2);
+      expect(onFileComplete.mock.calls[0][0].source).toContain("itemname-e.dat.zip");
+      expect(onFileComplete.mock.calls[1][0].source).toContain("armorgrp.dat.zip");
+    });
+  });
 });
