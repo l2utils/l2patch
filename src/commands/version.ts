@@ -9,6 +9,24 @@ import { buildConfigFromCli } from "./common";
 export function createVersionCommand(): Command {
   return new Command("version")
     .description("Check the latest or current Lineage 2 client patch version")
+    .option(
+      "--updater-host <host>",
+      "Updater TCP host (e.g. updater.nclauncher.ncsoft.com)"
+    )
+    .option("--updater-port <port>", "Updater TCP port (default: 27500)")
+    .option("--game-id <id>", "NCSoft Game ID (e.g. LINEAGE2)")
+    .option(
+      "--version-url <url>",
+      "URL of the version check endpoint or manifest"
+    )
+    .option(
+      "--auth-token <token>",
+      "Authorization token for protected endpoints"
+    )
+    .option(
+      "-r, --retries <count>",
+      "Maximum retry attempts on rate limit or network failure (default: 3)"
+    )
     .option("--json", "Output version information as JSON")
     .option("--set-env", "Write retrieved version to local .env file")
     .action(async (cmdOpts, cmd) => {

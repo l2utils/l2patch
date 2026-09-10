@@ -3,3 +3,4 @@ export * from "./config";
 export * from "./version";
 export * from "./downloader";
 export * from "./progress";
+export * from "./filters";

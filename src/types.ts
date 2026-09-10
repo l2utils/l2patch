@@ -1,3 +1,5 @@
+import { DownloadFilter } from "./filters";
+
 export interface PatchConfig {
   baseUrl?: string;
   cdnHost?: string;
@@ -124,6 +126,7 @@ export interface UpdateDownloadOptions {
   manifestPathOrUrl?: string;
   manifestType?: "patch" | "filemap";
   fileList?: string[];
+  filter?: DownloadFilter | string;
   concurrency?: number;
   config?: PatchConfig;
   maxRetries?: number;
@@ -143,6 +146,7 @@ export interface UpdatePatchOptions {
   manifestPathOrUrl?: string;
   manifestType?: "patch" | "filemap";
   fileList?: string[];
+  filter?: DownloadFilter | string;
   concurrency?: number;
   config?: PatchConfig;
   maxRetries?: number;

@@ -6,13 +6,14 @@ import { fetchFullZip, fetchPatch } from "../downloader";
 import { FileProgressReporter } from "../progress";
 import { checkCurrentVersion } from "../version";
 import { buildConfigFromCli } from "./common";
-
+import { createDownloadVersionCommand } from "./download-version";
 
 /**
- * Creates the `download` command for the commander program.
+ * Creates the `download file` command for downloading a single client file.
  */
-export function createDownloadCommand(): Command {
-  return new Command("download")
+export function createDownloadFileCommand(): Command {
+  return new Command("file")
+    .alias("download-file")
     .description(
       "Download full zip or patch delta of a single client file and output to stdout"
     )
@@ -38,9 +39,33 @@ export function createDownloadCommand(): Command {
       "3"
     )
     .option(
+      "-d, --delay <ms>",
+      "Delay in milliseconds between requests (default: 0)",
+      "0"
+    )
+    .option(
       "--skip-existing",
       "Skip downloading if output file already exists locally",
       false
+    )
+    .option("--base-url <url>", "Base URL of the patch server / CDN")
+    .option(
+      "--cdn-host <host>",
+      "CDN Host of the patch server (e.g. d35293xeakkyq4.cloudfront.net)"
+    )
+    .option(
+      "--updater-host <host>",
+      "Updater TCP host (e.g. updater.nclauncher.ncsoft.com)"
+    )
+    .option("--updater-port <port>", "Updater TCP port")
+    .option("--game-id <id>", "NCSoft Game ID (e.g. LINEAGE2)")
+    .option(
+      "--version-url <url>",
+      "URL of the version check endpoint or manifest"
+    )
+    .option(
+      "--auth-token <token>",
+      "Authorization token for protected endpoints"
     )
     .option("--progress", "Display download progress", true)
     .option("--no-progress", "Disable download progress")
@@ -103,8 +128,6 @@ export function createDownloadCommand(): Command {
 
         reporter.finish();
 
-
-
         if (cmdOpts.output) {
           const dest = path.resolve(process.cwd(), cmdOpts.output);
           const dir = path.dirname(dest);
@@ -120,4 +143,17 @@ export function createDownloadCommand(): Command {
         process.exit(1);
       }
     });
+}
+
+/**
+ * Creates the `download` subcommand group for the commander program.
+ */
+export function createDownloadCommand(): Command {
+  const cmd = new Command("download")
+    .description("Download Lineage 2 client patch files and updates");
+
+  cmd.addCommand(createDownloadFileCommand());
+  cmd.addCommand(createDownloadVersionCommand());
+
+  return cmd;
 }

@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import {
-  createCdnCommand,
   createDownloadCommand,
-  createDownloadVersionCommand,
   createFileInfoMapCommand,
   createPatchFileInfoCommand,
-  createVersionCommand,
+  createUpdaterCommand,
 } from "./commands";
 
 const program = new Command();
@@ -16,42 +14,12 @@ program
   .description("Lineage 2 client patch inspection and file download utility")
   .version("1.0.0");
 
-// Global options that apply across commands
-program
-  .option("--base-url <url>", "Base URL of the patch server / CDN")
-  .option(
-    "--cdn-host <host>",
-    "CDN Host of the patch server (e.g. d35293xeakkyq4.cloudfront.net)"
-  )
-  .option(
-    "--updater-host <host>",
-    "Updater TCP host (e.g. updater.nclauncher.ncsoft.com)"
-  )
-  .option("--updater-port <port>", "Updater TCP port")
-  .option("--game-id <id>", "NCSoft Game ID (e.g. LINEAGE2)")
-  .option(
-    "--version-url <url>",
-    "URL of the version check endpoint or manifest"
-  )
-  .option(
-    "--auth-token <token>",
-    "Authorization token for protected endpoints"
-  )
-  .option(
-    "-r, --retries <count>",
-    "Maximum retry attempts on rate limit or network failure (default: 3)"
-  )
-  .option(
-    "-d, --delay <ms>",
-    "Delay in milliseconds between requests to prevent CDN rate limiting (default: 0)"
-  );
+// Subcommand groups
+program.addCommand(createUpdaterCommand());
+program.addCommand(createDownloadCommand());
 
-// Add individual commands using addCommand
-program.addCommand(createCdnCommand());
-program.addCommand(createVersionCommand());
+// Manifest utility commands
 program.addCommand(createFileInfoMapCommand());
 program.addCommand(createPatchFileInfoCommand());
-program.addCommand(createDownloadCommand());
-program.addCommand(createDownloadVersionCommand());
 
 program.parse(process.argv);

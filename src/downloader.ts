@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import { filterFileList, isAllFilter } from "./filters";
 import { requireBaseUrl, resolveConfig } from "./config";
 import {
   ActiveFileDownload,
@@ -917,8 +918,9 @@ export async function downloadUpdate(
     targetVersion = latestInfo.version;
   }
 
-  // Check for consolidated update archive first if no explicit manifest was supplied
-  if (!options?.manifestPathOrUrl && !options?.fileList) {
+  // Check for consolidated update archive first if no explicit manifest was supplied and no subset filter is active
+  const isAll = !options?.filter || isAllFilter(options.filter);
+  if (!options?.manifestPathOrUrl && !options?.fileList && isAll) {
     const archiveUrl = buildUpdateArchiveUrl(targetVersion, config);
     const archiveExists = await probeUrl(archiveUrl, config.authToken, retryOpts);
     if (archiveExists) {
@@ -984,9 +986,14 @@ export async function downloadUpdate(
     files = await loadManifestFileList(manifestSource, config.authToken, retryOpts);
   }
 
+  if (options?.filter) {
+    files = filterFileList(files, options.filter);
+  }
+
   if (files.length === 0) {
+    const filterMsg = options?.filter ? ` matching filter "${options.filter}"` : "";
     throw new Error(
-      `No files found to download for update version ${targetVersion}.`
+      `No files found to download${filterMsg} for update version ${targetVersion}.`
     );
   }
 
@@ -1085,8 +1092,9 @@ export async function downloadPatchUpdate(
   };
   const { fromVersion, toVersion } = options;
 
-  // Check for consolidated patch archive first if no explicit manifest was supplied
-  if (!options.manifestPathOrUrl && !options.fileList) {
+  // Check for consolidated patch archive first if no explicit manifest was supplied and no subset filter is active
+  const isAll = !options.filter || isAllFilter(options.filter);
+  if (!options.manifestPathOrUrl && !options.fileList && isAll) {
     const archiveUrl = buildPatchArchiveUrl(fromVersion, toVersion, config);
     const archiveExists = await probeUrl(archiveUrl, config.authToken, retryOpts);
     if (archiveExists) {
@@ -1153,9 +1161,14 @@ export async function downloadPatchUpdate(
     files = await loadManifestFileList(manifestSource, config.authToken, retryOpts);
   }
 
+  if (options.filter) {
+    files = filterFileList(files, options.filter);
+  }
+
   if (files.length === 0) {
+    const filterMsg = options.filter ? ` matching filter "${options.filter}"` : "";
     throw new Error(
-      `No files found to patch between ${fromVersion} and ${toVersion}.`
+      `No files found to patch${filterMsg} between ${fromVersion} and ${toVersion}.`
     );
   }
 

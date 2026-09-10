@@ -127,6 +127,130 @@ export function queryCdnConfig(
   });
 }
 
+export interface UpdaterStatusInfo {
+  online: boolean;
+  status: "online" | "maintenance";
+  statusCode: number;
+  gateStatus: number;
+  version?: string;
+  gameId: string;
+}
+
+/**
+ * Queries the Lineage 2 updater server status and maintenance gate (Opcode 0x0004: GetStatus).
+ * Requires session context; automatically executes Opcode 0x0006 first over the same TCP socket.
+ */
+export function queryUpdaterStatus(
+  host: string,
+  port: number = 27500,
+  gameId: string = "LINEAGE2",
+  timeoutMs: number = 5000
+): Promise<UpdaterStatusInfo> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      client.destroy();
+      reject(new Error(`Timeout querying updater status from ${host}:${port}`));
+    }, timeoutMs);
+
+    let stage: "version" | "status" = "version";
+    let received = Buffer.alloc(0);
+    let resolvedVersion: string | undefined;
+
+    const gameBytes = Buffer.from(gameId, "ascii");
+
+    const sendRequest = (opcode: number) => {
+      const reqLen = 4 + 2 + gameBytes.length;
+      const req = Buffer.from([
+        reqLen & 0xff,
+        (reqLen >> 8) & 0xff,
+        opcode & 0xff,
+        (opcode >> 8) & 0xff,
+        0x0a,
+        gameBytes.length,
+        ...gameBytes,
+      ]);
+      client.write(req);
+    };
+
+    const client = net.createConnection({ host, port }, () => {
+      sendRequest(0x0006);
+    });
+
+    client.on("data", (chunk: Buffer) => {
+      received = Buffer.concat([received, chunk]);
+
+      if (stage === "version") {
+        if (received.length < 2) return;
+        const packetLen = received.readUInt16LE(0);
+        if (received.length < packetLen) return;
+
+        const packet = received.subarray(0, packetLen);
+        received = received.subarray(packetLen);
+
+        try {
+          const payload = packet.subarray(8);
+          const tagIdx = payload.indexOf(0x20);
+          if (tagIdx !== -1) {
+            let byte = payload[tagIdx + 1];
+            let version = byte & 0x7f;
+            if (byte & 0x80) {
+              version |= (payload[tagIdx + 2] & 0x7f) << 7;
+            }
+            resolvedVersion = String(version);
+          }
+
+          stage = "status";
+          sendRequest(0x0004);
+        } catch (err) {
+          clearTimeout(timer);
+          client.end();
+          reject(err);
+        }
+      } else if (stage === "status") {
+        if (received.length < 2) return;
+        const packetLen = received.readUInt16LE(0);
+        if (received.length < packetLen) return;
+
+        clearTimeout(timer);
+        client.end();
+
+        const packet = received.subarray(0, packetLen);
+        try {
+          if (packet.length < 8) {
+            throw new Error("Invalid response: packet too short");
+          }
+          const statusCode = packet.readUInt32LE(4);
+          const payload = packet.subarray(8);
+
+          let gateStatus = 0;
+          const tag2Idx = payload.indexOf(0x10);
+          if (tag2Idx !== -1 && tag2Idx + 1 < payload.length) {
+            gateStatus = payload[tag2Idx + 1] & 0x7f;
+          }
+
+          const online = statusCode === 0 && gateStatus === 1;
+
+          resolve({
+            online,
+            status: online ? "online" : "maintenance",
+            statusCode,
+            gateStatus,
+            version: resolvedVersion,
+            gameId,
+          });
+        } catch (err) {
+          reject(err);
+        }
+      }
+    });
+
+    client.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
 /**
  * Fetches and parses the current client patch version from the configured endpoint.
  * Supports querying the TCP updater daemon (port 27500) or HTTP JSON / manifest endpoints.

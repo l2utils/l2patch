@@ -16,6 +16,12 @@ export function createCdnCommand(): Command {
     .description(
       "Query the active CDN host from the updater server (Opcode 0x0003)"
     )
+    .option(
+      "--updater-host <host>",
+      "Updater TCP host (e.g. updater.nclauncher.ncsoft.com)"
+    )
+    .option("--updater-port <port>", "Updater TCP port (default: 27500)")
+    .option("--game-id <id>", "NCSoft Game ID (e.g. LINEAGE2)")
     .option("--json", "Output CDN configuration as JSON")
     .option("--env", "Output formatted as .env variable (L2_PATCH_CDN_HOST=...)")
     .option(
@@ -26,8 +32,8 @@ export function createCdnCommand(): Command {
       try {
         const config = buildConfigFromCli(cmd, cmdOpts);
         const host = requireUpdaterHost(config);
-        const port = requireUpdaterPort(config);
-        const gameId = requireGameId(config);
+        const port = config.updaterPort || 27500;
+        const gameId = config.gameId || "LINEAGE2";
 
         const cdnInfo = await queryCdnConfig(host, port, gameId);
         if (cmdOpts.setEnv) {

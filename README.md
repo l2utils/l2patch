@@ -50,99 +50,100 @@ Because this repository is public, CDN URLs, updater endpoints, and game credent
 
 ## CLI Usage
 
-### 1. Query Active CDN Host
+### 1. Updater Subcommands (`l2patch updater`)
 
+#### Query Active CDN Host
 Queries the updater server (Opcode `0x0003`) and outputs the raw CDN hostname:
 
 ```sh
 # Raw CDN hostname output (no labels)
-npx l2patch cdn
+npx l2patch updater cdn
 
 # Automatically persist retrieved CDN host and base URL into local .env
-npx l2patch cdn --set-env
+npx l2patch updater cdn --set-env
 
 # JSON format
-npx l2patch cdn --json
+npx l2patch updater cdn --json
 
 # Export to .env format
-npx l2patch cdn --env
+npx l2patch updater cdn --env
 ```
 
-### 2. Check Current Version
-
-Queries the latest patch version and outputs the raw version number:
+#### Check Current Version
+Queries the latest patch version (Opcode `0x0006`) and outputs the raw version number:
 
 ```sh
 # Raw version output (no labels)
-npx l2patch version
+npx l2patch updater version
 
 # Automatically persist retrieved version into local .env
-npx l2patch version --set-env
+npx l2patch updater version --set-env
 
 # JSON output
-npx l2patch version --json
+npx l2patch updater version --json
 ```
 
-### 3. Download FileInfoMap Manifest
+#### Query Readiness & Maintenance Status
+Queries the service readiness and maintenance gate (Opcode `0x0004`):
 
-Downloads `FileInfoMap` catalog (complete client file mapping) and streams it directly to `stdout`:
+```sh
+# Output "online" or "maintenance"
+npx l2patch updater status
+
+# Output detailed status JSON
+npx l2patch updater status --json
+```
+
+---
+
+### 2. Download Subcommands (`l2patch download`)
+
+#### Download Single File (`download file`)
+Streams downloaded full file `.zip` or delta `.patch` directly to `stdout`:
+
+```sh
+# Download full zip for latest version and pipe to file
+npx l2patch download file system/itemname-e.dat --latest > itemname-e.dat.zip
+
+# Download full zip for specific version
+npx l2patch download file system/itemname-e.dat -v 599 > itemname-e.dat.zip
+
+# Download delta patch between version 598 and 599 and pipe to file
+npx l2patch download file system/itemname-e.dat --patch --from 598 --to 599 > itemname-e.dat.patch
+
+# Optionally save directly to a file via -o / --output
+npx l2patch download file system/itemname-e.dat -v 599 -o ./downloads/itemname-e.dat.zip
+```
+
+#### Download Patch Version / Subset (`download version`)
+Downloads patch updates for an entire version or a filtered subset. Defaults to `./out` directory and `--filter default` (items, skills, quests, monster names, and database tables):
+
+```sh
+# Download default database building files (items, skills, quests, monsters, etc.) into ./out
+npx l2patch download version --latest
+
+# Filter by category
+npx l2patch download version --filter items
+npx l2patch download version --filter skills
+npx l2patch download version --filter textures
+
+# Download all files (emits warning on large size & throttling risk)
+npx l2patch download version --filter all --concurrency 6 --out-dir ./client
+
+# Download delta patches from version 598 to 599
+npx l2patch download version --patch --from 598 --to 599 --out-dir ./patches
+```
+
+---
+
+### 3. Download Manifests (`file-info-map` & `patch-file-info`)
 
 ```sh
 # Pipe FileInfoMap manifest for version 599 directly to a file
 npx l2patch file-info-map -v 599 > FileInfoMap_599.dat
 
-# Pipe FileInfoMap manifest for latest version
-npx l2patch file-info-map --latest > FileInfoMap.dat
-
-# Optionally save directly to a file via -o / --output
-npx l2patch file-info-map -v 599 -o ./manifests/FileInfoMap_599.dat
-```
-
-### 4. Download PatchFileInfo Manifest
-
-Downloads `PatchFileInfo` catalog (patch update delta and zip file catalog) and streams it directly to `stdout`:
-
-```sh
-# Pipe PatchFileInfo manifest for version 599 directly to a file
-npx l2patch patch-file-info -v 599 > PatchFileInfo_599.dat
-
 # Pipe PatchFileInfo manifest for latest version
 npx l2patch patch-file-info --latest > PatchFileInfo.dat
-
-# Optionally save directly to a file via -o / --output
-npx l2patch patch-file-info -v 599 -o ./manifests/PatchFileInfo_599.dat
-```
-
-### 5. Download Single File (Full Zip or Delta Patch)
-
-Streams downloaded full file `.zip` or delta `.patch` directly to `stdout`:
-
-```sh
-# Download full zip for latest version and pipe to file
-npx l2patch download system/itemname-e.dat --latest > itemname-e.dat.zip
-
-# Download full zip for specific version
-npx l2patch download system/itemname-e.dat -v 599 > itemname-e.dat.zip
-
-# Download delta patch between version 598 and 599 and pipe to file
-npx l2patch download system/itemname-e.dat --patch --from 598 --to 599 > itemname-e.dat.patch
-
-# Optionally save directly to a file via -o / --output
-npx l2patch download system/itemname-e.dat -v 599 -o ./downloads/itemname-e.dat.zip
-```
-
-### 6. Download Entire Patch Update (Full Zips or Delta Patches)
-
-```sh
-# Download all full file zips for the latest update using FileInfoMap
-npx l2patch download-version --latest --concurrency 6 --out-dir ./client
-
-# Download all delta patches from version 598 to 599 using PatchFileInfo
-npx l2patch download-version --patch --from 598 --to 599 --concurrency 6 --out-dir ./patches
-
-# Download using an explicit FileInfoMap or PatchFileInfo file
-npx l2patch download-version --file-info-map ./FileInfoMap.dat --out-dir ./client
-npx l2patch download-version --patch --from 598 --to 599 --patch-file-info ./PatchFileInfo.dat
 ```
 
 ---

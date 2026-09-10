@@ -449,4 +449,135 @@ describe("version", () => {
       jest.restoreAllMocks();
     });
   });
+
+  describe("queryUpdaterStatus", () => {
+    test("queries status: performs 0x06 handshake then 0x04 online response", async () => {
+      const { EventEmitter } = require("events");
+      const net = require("net");
+      const { queryUpdaterStatus } = require("../src/version");
+      const mockSocket = new EventEmitter();
+      const written: Buffer[] = [];
+      mockSocket.write = jest.fn((data: Buffer) => {
+        written.push(data);
+        if (written.length === 1) {
+          // Opcode 0x06 request sent -> respond with 0x06 response
+          process.nextTick(() => {
+            // Version 599 (varint: 0xd7, 0x04)
+            const payload06 = Buffer.from([0x20, 0xd7, 0x04]);
+            const header06 = Buffer.alloc(8);
+            header06.writeUInt16LE(8 + payload06.length, 0); // length
+            header06.writeUInt16LE(0x0006, 2); // opcode 6
+            header06.writeUInt32LE(0, 4); // status 0
+            mockSocket.emit("data", Buffer.concat([header06, payload06]));
+          });
+        } else if (written.length === 2) {
+          // Opcode 0x04 request sent -> respond with 0x04 response (Online: tag 2 = 1)
+          process.nextTick(() => {
+            const payload04 = Buffer.from([0x0a, 0x08, ...Buffer.from("LINEAGE2"), 0x10, 0x01]);
+            const header04 = Buffer.alloc(8);
+            header04.writeUInt16LE(8 + payload04.length, 0);
+            header04.writeUInt16LE(0x0004, 2); // opcode 4
+            header04.writeUInt32LE(0, 4); // status 0 (success)
+            mockSocket.emit("data", Buffer.concat([header04, payload04]));
+          });
+        }
+      });
+      mockSocket.end = jest.fn();
+
+      jest.spyOn(net, "createConnection").mockImplementationOnce((opts: any, cb: any) => {
+        process.nextTick(() => cb());
+        return mockSocket;
+      });
+
+      const result = await queryUpdaterStatus("updater.example.com", 27500, "LINEAGE2");
+      expect(result.online).toBe(true);
+      expect(result.status).toBe("online");
+      expect(result.version).toBe("599");
+      expect(result.gateStatus).toBe(1);
+      expect(result.statusCode).toBe(0);
+
+      // Verify that two packets were sent (0x06 then 0x04)
+      expect(written).toHaveLength(2);
+      expect(written[0].readUInt16LE(2)).toBe(0x0006);
+      expect(written[1].readUInt16LE(2)).toBe(0x0004);
+
+      jest.restoreAllMocks();
+    });
+
+    test("queries status: returns maintenance when gateStatus is 0", async () => {
+      const { EventEmitter } = require("events");
+      const net = require("net");
+      const { queryUpdaterStatus } = require("../src/version");
+      const mockSocket = new EventEmitter();
+      const written: Buffer[] = [];
+      mockSocket.write = jest.fn((data: Buffer) => {
+        written.push(data);
+        if (written.length === 1) {
+          process.nextTick(() => {
+            const payload06 = Buffer.from([0x20, 0x50]); // version 80
+            const header06 = Buffer.alloc(8);
+            header06.writeUInt16LE(8 + payload06.length, 0);
+            header06.writeUInt16LE(0x0006, 2);
+            header06.writeUInt32LE(0, 4);
+            mockSocket.emit("data", Buffer.concat([header06, payload06]));
+          });
+        } else if (written.length === 2) {
+          process.nextTick(() => {
+            // tag 2 = 0 (maintenance)
+            const payload04 = Buffer.from([0x0a, 0x08, ...Buffer.from("LINEAGE2"), 0x10, 0x00]);
+            const header04 = Buffer.alloc(8);
+            header04.writeUInt16LE(8 + payload04.length, 0);
+            header04.writeUInt16LE(0x0004, 2);
+            header04.writeUInt32LE(0, 4);
+            mockSocket.emit("data", Buffer.concat([header04, payload04]));
+          });
+        }
+      });
+      mockSocket.end = jest.fn();
+
+      jest.spyOn(net, "createConnection").mockImplementationOnce((opts: any, cb: any) => {
+        process.nextTick(() => cb());
+        return mockSocket;
+      });
+
+      const result = await queryUpdaterStatus("updater.example.com");
+      expect(result.online).toBe(false);
+      expect(result.status).toBe("maintenance");
+      expect(result.gateStatus).toBe(0);
+
+      jest.restoreAllMocks();
+    });
+
+    test("handles timeout and socket errors in queryUpdaterStatus", async () => {
+      const { EventEmitter } = require("events");
+      const net = require("net");
+      const { queryUpdaterStatus } = require("../src/version");
+
+      // 1. Timeout
+      const mockTimeout = new EventEmitter();
+      mockTimeout.write = jest.fn();
+      mockTimeout.destroy = jest.fn();
+      jest.spyOn(net, "createConnection").mockImplementationOnce(() => mockTimeout);
+
+      await expect(
+        queryUpdaterStatus("updater.example.com", 27500, "LINEAGE2", 20)
+      ).rejects.toThrow("Timeout querying updater status");
+
+      // 2. Socket error
+      const mockError = new EventEmitter();
+      mockError.write = jest.fn();
+      jest.spyOn(net, "createConnection").mockImplementationOnce(() => {
+        process.nextTick(() => {
+          mockError.emit("error", new Error("Socket disconnected"));
+        });
+        return mockError;
+      });
+
+      await expect(
+        queryUpdaterStatus("updater.example.com", 27500, "LINEAGE2")
+      ).rejects.toThrow("Socket disconnected");
+
+      jest.restoreAllMocks();
+    });
+  });
 });
