@@ -1,12 +1,11 @@
 import * as fs from "fs";
 import * as path from "path";
 import { Command } from "commander";
-import { requireBaseUrl } from "../config";
-import { fetchFullZip, fetchPatch } from "../downloader";
-import { FileProgressReporter } from "../progress";
-import { checkCurrentVersion } from "../version";
-import { buildConfigFromCli } from "./common";
-import { createDownloadVersionCommand } from "./download-version";
+import { requireBaseUrl } from "../../config";
+import { fetchFullZip, fetchPatch } from "../../downloader";
+import { FileProgressReporter } from "../../progress";
+import { checkCurrentVersion } from "../../version";
+import { buildConfigFromCli } from "../common";
 
 /**
  * Creates the `download file` command for downloading a single client file.
@@ -143,17 +142,4 @@ export function createDownloadFileCommand(): Command {
         process.exit(1);
       }
     });
-}
-
-/**
- * Creates the `download` subcommand group for the commander program.
- */
-export function createDownloadCommand(): Command {
-  const cmd = new Command("download")
-    .description("Download Lineage 2 client patch files and updates");
-
-  cmd.addCommand(createDownloadFileCommand());
-  cmd.addCommand(createDownloadVersionCommand());
-
-  return cmd;
 }

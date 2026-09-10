@@ -1,23 +1,24 @@
 import * as fs from "fs";
 import * as path from "path";
 import { Command } from "commander";
-import { requireBaseUrl } from "../config";
-import { fetchPatchFileInfo } from "../downloader";
-import { FileProgressReporter } from "../progress";
-import { buildConfigFromCli } from "./common";
+import { requireBaseUrl } from "../../config";
+import { fetchFileInfoMap } from "../../downloader";
+import { FileProgressReporter } from "../../progress";
+import { buildConfigFromCli } from "../common";
 
 /**
- * Creates the `patch-file-info` command for the commander program.
+ * Creates the `file-info-map` command for the commander program.
  */
-export function createPatchFileInfoCommand(): Command {
-  return new Command("patch-file-info")
+export function createFileInfoMapCommand(): Command {
+  return new Command("file-info-map")
+    .alias("manifest")
     .description(
-      "Download PatchFileInfo manifest for a specific version (or latest) and output to stdout"
+      "Download FileInfoMap manifest for a specific version (or latest) and output to stdout"
     )
-    .option("-v, --version <version>", "Target version to download PatchFileInfo for")
+    .option("-v, --version <version>", "Target version to download FileInfoMap for")
     .option(
       "-l, --latest",
-      "Download PatchFileInfo for the latest version automatically",
+      "Download FileInfoMap for the latest version automatically",
       true
     )
     .option(
@@ -62,10 +63,10 @@ export function createPatchFileInfoCommand(): Command {
         const reporter = new FileProgressReporter({
           stream: process.stderr,
           enabled: cmdOpts.progress,
-          label: "PatchFileInfo",
+          label: "FileInfoMap",
         });
 
-        const buffer = await fetchPatchFileInfo(cmdOpts.version, {
+        const buffer = await fetchFileInfoMap(cmdOpts.version, {
           latest: cmdOpts.latest && !cmdOpts.version,
           outDir: dest,
           config,
@@ -85,7 +86,7 @@ export function createPatchFileInfoCommand(): Command {
           process.stdout.write(buffer);
         }
       } catch (err) {
-        console.error(`Error downloading PatchFileInfo: ${(err as Error).message}`);
+        console.error(`Error downloading FileInfoMap: ${(err as Error).message}`);
         process.exit(1);
       }
     });

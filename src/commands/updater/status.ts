@@ -3,9 +3,9 @@ import {
   requireGameId,
   requireUpdaterHost,
   requireUpdaterPort,
-} from "../config";
-import { queryUpdaterStatus } from "../version";
-import { buildConfigFromCli } from "./common";
+} from "../../config";
+import { queryUpdaterStatus } from "../../version";
+import { buildConfigFromCli } from "../common";
 
 /**
  * Creates the `status` command for querying server readiness (Opcode 0x0004).

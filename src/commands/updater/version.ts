@@ -1,7 +1,7 @@
 import { Command } from "commander";
-import { requireVersionUrl, updateDotEnv } from "../config";
-import { checkCurrentVersion } from "../version";
-import { buildConfigFromCli } from "./common";
+import { requireVersionUrl, updateDotEnv } from "../../config";
+import { checkCurrentVersion } from "../../version";
+import { buildConfigFromCli } from "../common";
 
 /**
  * Creates the `version` command for the commander program.

@@ -1,10 +1,10 @@
 import { Command } from "commander";
-import { requireBaseUrl } from "../config";
-import { downloadPatchUpdate, downloadUpdate } from "../downloader";
-import { isAllFilter, LARGE_DOWNLOAD_WARNING } from "../filters";
-import { BatchProgressReporter } from "../progress";
-import { checkCurrentVersion } from "../version";
-import { buildConfigFromCli } from "./common";
+import { requireBaseUrl } from "../../config";
+import { downloadPatchUpdate, downloadUpdate } from "../../downloader";
+import { isAllFilter, LARGE_DOWNLOAD_WARNING } from "../../filters";
+import { BatchProgressReporter } from "../../progress";
+import { checkCurrentVersion } from "../../version";
+import { buildConfigFromCli } from "../common";
 
 /**
  * Creates the `download version` command for downloading updates.

@@ -3,6 +3,10 @@ import { createCdnCommand } from "./cdn";
 import { createStatusCommand } from "./status";
 import { createVersionCommand } from "./version";
 
+export * from "./cdn";
+export * from "./status";
+export * from "./version";
+
 /**
  * Creates the `updater` subcommand group for the commander program.
  */

@@ -4,9 +4,9 @@ import {
   requireUpdaterHost,
   requireUpdaterPort,
   updateDotEnv,
-} from "../config";
-import { queryCdnConfig } from "../version";
-import { buildConfigFromCli } from "./common";
+} from "../../config";
+import { queryCdnConfig } from "../../version";
+import { buildConfigFromCli } from "../common";
 
 /**
  * Creates the `cdn` command for the commander program.
