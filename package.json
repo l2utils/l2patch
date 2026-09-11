@@ -18,8 +18,9 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "jest",
-    "test:coverage": "jest --coverage",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
     "cli": "ts-node src/cli.ts"
   },
   "repository": {
@@ -40,13 +41,12 @@
   },
   "homepage": "https://github.com/l2utils/l2patch#readme",
   "devDependencies": {
-    "@types/jest": "^30.0.0",
     "@types/node": "^22.13.5",
-    "jest": "^30.2.0",
+    "@vitest/coverage-v8": "^5.0.0",
     "prettier": "^3.2.5",
-    "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^5.0.0"
   },
   "dependencies": {
     "commander": "^14.0.2"

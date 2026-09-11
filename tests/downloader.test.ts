@@ -197,7 +197,7 @@ describe("downloader", () => {
       const content = Buffer.from("system\\remote_bom.dat:200:sha:0\r\n", "utf16le");
       const rawBuffer = Buffer.concat([bom, content]);
 
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: async () =>
           rawBuffer.buffer.slice(
@@ -218,7 +218,7 @@ describe("downloader", () => {
     });
 
     test("loadManifestFileList loads from remote URL", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         text: async () => JSON.stringify(["system/remote.dat"]),
       } as unknown as Response);
@@ -231,7 +231,7 @@ describe("downloader", () => {
     });
 
     test("loadManifestFileList throws on 404 remote URL", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
         statusText: "Not Found",
@@ -251,7 +251,7 @@ describe("downloader", () => {
 
   describe("probeUrl", () => {
     test("returns true when HEAD succeeds", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
       } as unknown as Response);
@@ -261,7 +261,7 @@ describe("downloader", () => {
     });
 
     test("falls back to GET Range when HEAD returns 405", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockResolvedValueOnce({
           ok: false,
@@ -277,7 +277,7 @@ describe("downloader", () => {
     });
 
     test("returns false when response is 404", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
       } as unknown as Response);
@@ -287,14 +287,14 @@ describe("downloader", () => {
     });
 
     test("returns false on network error", async () => {
-      global.fetch = jest.fn().mockRejectedValue(new Error("Network failure"));
+      global.fetch = vi.fn().mockRejectedValue(new Error("Network failure"));
       const exists = await probeUrl("https://example.com/test.patch");
       expect(exists).toBe(false);
     });
 
     test("sends auth token in headers when provided", async () => {
       let authHeader: string | undefined;
-      global.fetch = jest.fn().mockImplementation(async (_url, opts) => {
+      global.fetch = vi.fn().mockImplementation(async (_url, opts) => {
         authHeader = opts?.headers?.Authorization;
         return { ok: true } as unknown as Response;
       });
@@ -307,7 +307,7 @@ describe("downloader", () => {
 
   describe("downloadFullZip", () => {
     test("downloads full zip with explicit version", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: async () => createMockArrayBuffer("PK-mock-zip-content"),
       } as unknown as Response);
@@ -324,7 +324,7 @@ describe("downloader", () => {
     });
 
     test("creates destination directory recursively if it does not exist", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: async () => createMockArrayBuffer("PK-nested"),
       } as unknown as Response);
@@ -341,7 +341,7 @@ describe("downloader", () => {
     });
 
     test("throws when download returns non-200", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 500,
         statusText: "Server Error",
@@ -357,7 +357,7 @@ describe("downloader", () => {
     });
 
     test("downloads latest version automatically when latest: true", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockResolvedValueOnce({
           ok: true,
@@ -382,7 +382,7 @@ describe("downloader", () => {
 
   describe("downloadManifest", () => {
     test("downloads manifest with explicit version and gameId", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: async () => createMockArrayBuffer("manifest content"),
       } as unknown as Response);
@@ -397,7 +397,7 @@ describe("downloader", () => {
     });
 
     test("downloads filemap manifest without gameId", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: async () => createMockArrayBuffer("filemap content"),
       } as unknown as Response);
@@ -413,7 +413,7 @@ describe("downloader", () => {
     });
 
     test("downloads latest manifest when version not provided", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         // Version check call
         .mockResolvedValueOnce({
@@ -444,7 +444,7 @@ describe("downloader", () => {
 
   describe("downloadPatch", () => {
     test("downloads direct patch when direct N -> M patch exists", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         // HEAD probe
         .mockResolvedValueOnce({
@@ -474,7 +474,7 @@ describe("downloader", () => {
     });
 
     test("falls back to incremental chain when direct patch is 404", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         // 1. Direct probe 100 -> 102 (404)
         .mockResolvedValueOnce({
@@ -522,7 +522,7 @@ describe("downloader", () => {
     });
 
     test("throws if non-numeric versions have no direct patch", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
       } as unknown as Response);
@@ -538,7 +538,7 @@ describe("downloader", () => {
     });
 
     test("throws if incremental step is missing", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         // Direct probe fails
         .mockResolvedValueOnce({
@@ -564,7 +564,7 @@ describe("downloader", () => {
 
   describe("fetch methods (in-memory buffer output)", () => {
     test("fetchFullZip returns buffer with explicit version", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: async () => createMockArrayBuffer("PK-buffer-zip"),
       } as unknown as Response);
@@ -579,7 +579,7 @@ describe("downloader", () => {
     });
 
     test("fetchFullZip resolves latest version automatically", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockResolvedValueOnce({
           ok: true,
@@ -600,7 +600,7 @@ describe("downloader", () => {
     });
 
     test("fetchManifest returns buffer", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: async () => createMockArrayBuffer("manifest-buffer"),
       } as unknown as Response);
@@ -613,7 +613,7 @@ describe("downloader", () => {
     });
 
     test("fetchManifest resolves latest version automatically", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockResolvedValueOnce({
           ok: true,
@@ -634,7 +634,7 @@ describe("downloader", () => {
     });
 
     test("downloadManifest creates nested output directory if missing", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: async () => createMockArrayBuffer("nested manifest"),
       } as unknown as Response);
@@ -651,7 +651,7 @@ describe("downloader", () => {
 
     test("fetchFileInfoMap returns buffer with filemap type", async () => {
       let fetchedUrl = "";
-      global.fetch = jest.fn().mockImplementation(async (url: string) => {
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
         fetchedUrl = url;
         return {
           ok: true,
@@ -669,7 +669,7 @@ describe("downloader", () => {
 
     test("fetchPatchFileInfo returns buffer with patch type", async () => {
       let fetchedUrl = "";
-      global.fetch = jest.fn().mockImplementation(async (url: string) => {
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
         fetchedUrl = url;
         return {
           ok: true,
@@ -686,7 +686,7 @@ describe("downloader", () => {
     });
 
     test("downloadFileInfoMap downloads FileInfoMap file to disk", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: async () => createMockArrayBuffer("disk-file-info-map"),
       } as unknown as Response);
@@ -702,7 +702,7 @@ describe("downloader", () => {
     });
 
     test("downloadPatchFileInfo downloads PatchFileInfo file to disk", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: async () => createMockArrayBuffer("disk-patch-file-info"),
       } as unknown as Response);
@@ -718,7 +718,7 @@ describe("downloader", () => {
     });
 
     test("fetchPatch returns buffer when direct patch exists", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         // HEAD probe
         .mockResolvedValueOnce({
@@ -741,7 +741,7 @@ describe("downloader", () => {
     });
 
     test("fetchPatch throws when direct patch does not exist", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
       } as unknown as Response);
@@ -758,7 +758,7 @@ describe("downloader", () => {
 
   describe("downloadUpdate (entire patch update)", () => {
     test("downloads consolidated archive when available", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         // HEAD probe on archive (200)
         .mockResolvedValueOnce({
@@ -784,7 +784,7 @@ describe("downloader", () => {
     });
 
     test("downloads files from fileList if provided", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: async () => createMockArrayBuffer("PK-file-zip"),
       } as unknown as Response);
@@ -803,7 +803,7 @@ describe("downloader", () => {
     });
 
     test("downloads update resolving latest version automatically and throttles concurrency", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         // 1. checkCurrentVersion
         .mockResolvedValueOnce({
@@ -845,7 +845,7 @@ describe("downloader", () => {
 
     test("downloadUpdate uses manifestType filemap when specified", async () => {
       let manifestUrlRequested = "";
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockImplementation(async (url: string, init?: any) => {
           if (init?.method === "HEAD") {
@@ -875,7 +875,7 @@ describe("downloader", () => {
     });
 
     test("handles partial failures during manifest bulk download", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         // First file succeeds
         .mockResolvedValueOnce({
@@ -902,7 +902,7 @@ describe("downloader", () => {
     });
 
     test("throws if resolved file list is empty", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         // Archive probe returns 404
         .mockResolvedValueOnce({
@@ -927,7 +927,7 @@ describe("downloader", () => {
 
   describe("downloadPatchUpdate (entire patch update deltas)", () => {
     test("downloads consolidated patch archive when available", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         // HEAD probe on patch archive (200)
         .mockResolvedValueOnce({
@@ -953,7 +953,7 @@ describe("downloader", () => {
     });
 
     test("downloads patches from fileList when archive is not available", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         // Direct probe for patch 1: 200
         .mockResolvedValueOnce({
@@ -979,7 +979,7 @@ describe("downloader", () => {
     });
 
     test("handles partial failures during bulk patch download", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
       } as unknown as Response);
@@ -997,7 +997,7 @@ describe("downloader", () => {
     });
 
     test("throws if bulk patch file list is empty", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         // Archive probe returns 404
         .mockResolvedValueOnce({
@@ -1028,7 +1028,7 @@ describe("downloader", () => {
       let chunkIndex = 0;
       const chunks = [chunk1, chunk2];
 
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         headers: {
           get: (name: string) =>
@@ -1068,7 +1068,7 @@ describe("downloader", () => {
     });
 
     test("fetchFullZip passes onProgress", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: async () => createMockArrayBuffer("zip-data"),
       } as unknown as Response);
@@ -1086,7 +1086,7 @@ describe("downloader", () => {
     });
 
     test("fetchPatch passes onProgress", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockResolvedValueOnce({ ok: true } as Response) // HEAD probe
         .mockResolvedValueOnce({
@@ -1108,7 +1108,7 @@ describe("downloader", () => {
     });
 
     test("downloadUpdate in archive mode notifies onProgress and onFileProgress", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockResolvedValueOnce({ ok: true } as Response) // HEAD probe for archive
         .mockResolvedValueOnce({
@@ -1133,7 +1133,7 @@ describe("downloader", () => {
     });
 
     test("downloadPatchUpdate in archive mode notifies onProgress and onFileProgress", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockResolvedValueOnce({ ok: true } as Response) // HEAD probe for archive
         .mockResolvedValueOnce({
@@ -1160,7 +1160,7 @@ describe("downloader", () => {
 
     test("downloadPatchUpdate uses manifestType when specified", async () => {
       let manifestUrlRequested = "";
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockImplementation(async (url: string, init?: any) => {
           if (init?.method === "HEAD") {
@@ -1202,7 +1202,7 @@ describe("downloader", () => {
 
     test("probeUrl does not send User-Agent header", async () => {
       let sentHeaders: any;
-      global.fetch = jest.fn().mockImplementation(async (_url, opts) => {
+      global.fetch = vi.fn().mockImplementation(async (_url, opts) => {
         sentHeaders = opts?.headers;
         return { ok: true } as unknown as Response;
       });
@@ -1214,7 +1214,7 @@ describe("downloader", () => {
 
     test("downloadToBuffer does not send User-Agent header", async () => {
       let sentHeaders: any;
-      global.fetch = jest.fn().mockImplementation(async (_url, opts) => {
+      global.fetch = vi.fn().mockImplementation(async (_url, opts) => {
         sentHeaders = opts?.headers;
         return {
           ok: true,
@@ -1229,7 +1229,7 @@ describe("downloader", () => {
 
     test("loadManifestFileList does not send User-Agent header on remote fetch", async () => {
       let sentHeaders: any;
-      global.fetch = jest.fn().mockImplementation(async (_url, opts) => {
+      global.fetch = vi.fn().mockImplementation(async (_url, opts) => {
         sentHeaders = opts?.headers;
         return {
           ok: true,
@@ -1275,7 +1275,7 @@ describe("downloader", () => {
 
   describe("fetchWithRetry", () => {
     test("returns response immediately on 200 OK", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
       } as unknown as Response);
@@ -1286,7 +1286,7 @@ describe("downloader", () => {
     });
 
     test("retries on 403 Forbidden and succeeds on next attempt", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockResolvedValueOnce({
           ok: false,
@@ -1306,7 +1306,7 @@ describe("downloader", () => {
     });
 
     test("retries on 429 Too Many Requests and honors Retry-After", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockResolvedValueOnce({
           ok: false,
@@ -1324,7 +1324,7 @@ describe("downloader", () => {
     });
 
     test("retries on 502, 503, 504 server errors", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockResolvedValueOnce({
           ok: false,
@@ -1349,7 +1349,7 @@ describe("downloader", () => {
     });
 
     test("returns non-retryable 404 without retrying", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
         headers: new Headers(),
@@ -1364,7 +1364,7 @@ describe("downloader", () => {
     });
 
     test("retries on network exception and recovers", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockRejectedValueOnce(new Error("Connection reset"))
         .mockResolvedValueOnce({
@@ -1380,7 +1380,7 @@ describe("downloader", () => {
     });
 
     test("rethrows when retries are exhausted on network failure", async () => {
-      global.fetch = jest.fn().mockRejectedValue(new Error("Fatal connection timeout"));
+      global.fetch = vi.fn().mockRejectedValue(new Error("Fatal connection timeout"));
 
       await expect(
         fetchWithRetry("https://example.com/fatal", undefined, {
@@ -1416,7 +1416,7 @@ describe("downloader", () => {
     test("downloadToFile skips when destination file exists with size > 0", async () => {
       const dest = path.join(testOutDir, "already_exists.dat");
       fs.writeFileSync(dest, "already downloaded content");
-      global.fetch = jest.fn();
+      global.fetch = vi.fn();
 
       const result = await downloadToFile("https://example.com/file.dat", dest, undefined, {
         skipExisting: true,
@@ -1429,7 +1429,7 @@ describe("downloader", () => {
     test("downloadToFile proceeds when destination exists but is empty (0 bytes)", async () => {
       const dest = path.join(testOutDir, "empty.dat");
       fs.writeFileSync(dest, "");
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         arrayBuffer: async () => createMockArrayBuffer("new-content"),
       } as unknown as Response);
@@ -1446,7 +1446,7 @@ describe("downloader", () => {
     test("downloadFullZip skips when output zip exists with size > 0", async () => {
       const existingZip = path.join(testOutDir, "itemname-e.dat_140.zip");
       fs.writeFileSync(existingZip, "cached-zip-content");
-      global.fetch = jest.fn();
+      global.fetch = vi.fn();
 
       const saved = await downloadFullZip("system/itemname-e.dat", {
         version: "140",
@@ -1462,7 +1462,7 @@ describe("downloader", () => {
     test("downloadPatch skips direct patch download when file exists with size > 0", async () => {
       const existingPatch = path.join(testOutDir, "itemname-e.dat_140_to_142.patch");
       fs.writeFileSync(existingPatch, "cached-patch-content");
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
       } as unknown as Response);
@@ -1486,7 +1486,7 @@ describe("downloader", () => {
       fs.writeFileSync(step1, "cached-step-1");
       fs.writeFileSync(step2, "cached-step-2");
 
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         // direct probe -> 404
         .mockResolvedValueOnce({ ok: false, status: 404 } as unknown as Response)
@@ -1513,14 +1513,14 @@ describe("downloader", () => {
   describe("download completion callbacks", () => {
     test("downloadToFile calls onComplete with source, destination, size, and speed", async () => {
       const fileData = "test content for onComplete";
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         headers: new Headers({ "content-length": String(fileData.length) }),
         arrayBuffer: async () => createMockArrayBuffer(fileData),
       });
 
-      const onComplete = jest.fn();
+      const onComplete = vi.fn();
       const dest = path.join(testOutDir, "complete_test.dat");
 
       await downloadToFile("https://cdn.example.com/test.dat", dest, undefined, {
@@ -1538,14 +1538,14 @@ describe("downloader", () => {
 
     test("fetchFullZip calls onComplete when provided", async () => {
       const fileData = "fetch-full-zip-content";
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         headers: new Headers({ "content-length": String(fileData.length) }),
         arrayBuffer: async () => createMockArrayBuffer(fileData),
       });
 
-      const onComplete = jest.fn();
+      const onComplete = vi.fn();
       await fetchFullZip("system/itemname-e.dat", {
         version: "140",
         config: { baseUrl: "https://cdn.example.com" },
@@ -1562,14 +1562,14 @@ describe("downloader", () => {
 
     test("downloadFullZip passes onComplete to downloadToFile", async () => {
       const fileData = "download-full-zip-content";
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         headers: new Headers({ "content-length": String(fileData.length) }),
         arrayBuffer: async () => createMockArrayBuffer(fileData),
       });
 
-      const onComplete = jest.fn();
+      const onComplete = vi.fn();
       const saved = await downloadFullZip("system/itemname-e.dat", {
         version: "140",
         outDir: testOutDir,
@@ -1585,7 +1585,7 @@ describe("downloader", () => {
       const manifest = "system/itemname-e.dat\nsystem/armorgrp.dat";
       const fileData = "zip-data";
 
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         // probe archive -> 404
         .mockResolvedValueOnce({ ok: false, status: 404 } as unknown as Response)
@@ -1611,7 +1611,7 @@ describe("downloader", () => {
           arrayBuffer: async () => createMockArrayBuffer(fileData),
         } as unknown as Response);
 
-      const onFileComplete = jest.fn();
+      const onFileComplete = vi.fn();
       const result = await downloadUpdate({
         version: "140",
         outDir: testOutDir,

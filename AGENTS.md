@@ -49,7 +49,7 @@ npm run cli -- download --latest system/itemname-e.dat
   }
   ```
 * Keep `"declaration": true` and `"declarationMap": true` enabled in `tsconfig.json`.
-* Target >90% test coverage using Jest.
+* Target >90% test coverage using Vitest.
 
 ---
 

@@ -1,7 +1,20 @@
+import * as net from "net";
+import { EventEmitter } from "events";
+import { vi, type Mock } from "vitest";
+
+vi.mock("net", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("net")>();
+  return {
+    ...actual,
+    createConnection: vi.fn(),
+  };
+});
 import {
   checkCurrentVersion,
   extractVersionFromJson,
   extractVersionFromText,
+  queryUpdaterServer,
+  queryCdnConfig,
 } from "../src/version";
 
 describe("version", () => {
@@ -58,7 +71,7 @@ describe("version", () => {
 
   describe("checkCurrentVersion", () => {
     test("fetches and parses JSON response", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         headers: new Headers({ "content-type": "application/json" }),
         text: async () => JSON.stringify({ version: "145", timestamp: "2026-09-08T00:00:00Z" }),
@@ -80,7 +93,7 @@ describe("version", () => {
     });
 
     test("fetches and parses plain text response", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         headers: new Headers({ "content-type": "text/plain" }),
         text: async () => "version=150",
@@ -98,7 +111,7 @@ describe("version", () => {
     });
 
     test("fetches version when content-type header is null", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         headers: { get: () => null },
         text: async () => "build = 300",
@@ -111,7 +124,7 @@ describe("version", () => {
     });
 
     test("falls back to text when json starts with { but is invalid", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         headers: { get: () => "application/json" },
         text: async () => "{ broken json \n version = 400",
@@ -124,7 +137,7 @@ describe("version", () => {
     });
 
     test("throws on HTTP error", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
         statusText: "Not Found",
@@ -137,7 +150,7 @@ describe("version", () => {
 
     test("does not send User-Agent header in HTTP request", async () => {
       let sentHeaders: any;
-      global.fetch = jest.fn().mockImplementation(async (_url, init) => {
+      global.fetch = vi.fn().mockImplementation(async (_url, init) => {
         sentHeaders = init?.headers;
         return {
           ok: true,
@@ -155,7 +168,7 @@ describe("version", () => {
 
     test("retries on retryable status code and recovers", async () => {
       let calls = 0;
-      global.fetch = jest.fn().mockImplementation(async () => {
+      global.fetch = vi.fn().mockImplementation(async () => {
         calls++;
         if (calls === 1) {
           return {
@@ -180,7 +193,7 @@ describe("version", () => {
 
     test("retries on network exception and recovers", async () => {
       let calls = 0;
-      global.fetch = jest.fn().mockImplementation(async () => {
+      global.fetch = vi.fn().mockImplementation(async () => {
         calls++;
         if (calls === 1) {
           throw new Error("Network blip");
@@ -200,7 +213,7 @@ describe("version", () => {
     });
 
     test("throws after retries are exhausted on network failure", async () => {
-      global.fetch = jest.fn().mockRejectedValue(new Error("Fatal connection refused"));
+      global.fetch = vi.fn().mockRejectedValue(new Error("Fatal connection refused"));
 
       await expect(
         checkCurrentVersion({
@@ -211,14 +224,12 @@ describe("version", () => {
     });
 
     test("queries TCP updater daemon via queryUpdaterServer", async () => {
-      const { EventEmitter } = require("events");
-      const net = require("net");
       const mockSocket = new EventEmitter();
-      mockSocket.write = jest.fn();
-      mockSocket.destroy = jest.fn();
-      mockSocket.end = jest.fn();
+      mockSocket.write = vi.fn();
+      mockSocket.destroy = vi.fn();
+      mockSocket.end = vi.fn();
 
-      jest.spyOn(net, "createConnection").mockImplementation((opts: any, cb: any) => {
+      (net.createConnection as Mock).mockImplementation((opts: any, cb: any) => {
         process.nextTick(() => {
           cb();
           // Response payload: header (8 bytes) + varint tag 0x20 version 599 + tag 0x52 hash
@@ -241,24 +252,22 @@ describe("version", () => {
 
       expect(info.version).toBe("599");
       expect(info.manifestHash).toBe("2e5091edd712fdb36557fccf9f93e415408df9b0");
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
 
     test("falls back to versionUrl if updaterHost query fails", async () => {
-      const { EventEmitter } = require("events");
-      const net = require("net");
       const mockSocket = new EventEmitter();
-      mockSocket.write = jest.fn();
-      mockSocket.destroy = jest.fn();
+      mockSocket.write = vi.fn();
+      mockSocket.destroy = vi.fn();
 
-      jest.spyOn(net, "createConnection").mockImplementation(() => {
+      (net.createConnection as Mock).mockImplementation(() => {
         process.nextTick(() => {
           mockSocket.emit("error", new Error("TCP connection refused"));
         });
         return mockSocket;
       });
 
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         headers: new Headers({ "content-type": "application/json" }),
         text: async () => JSON.stringify({ version: "600" }),
@@ -270,17 +279,15 @@ describe("version", () => {
       });
 
       expect(info.version).toBe("600");
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
 
     test("re-throws TCP error when versionUrl is not configured", async () => {
-      const { EventEmitter } = require("events");
-      const net = require("net");
       const mockSocket = new EventEmitter();
-      mockSocket.write = jest.fn();
-      mockSocket.destroy = jest.fn();
+      mockSocket.write = vi.fn();
+      mockSocket.destroy = vi.fn();
 
-      jest.spyOn(net, "createConnection").mockImplementation(() => {
+      (net.createConnection as Mock).mockImplementation(() => {
         process.nextTick(() => {
           mockSocket.emit("error", new Error("TCP failure"));
         });
@@ -290,19 +297,16 @@ describe("version", () => {
       await expect(
         checkCurrentVersion({ updaterHost: "updater.example.com" })
       ).rejects.toThrow("TCP failure");
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
 
     test("queryUpdaterServer handles timeout and missing tag", async () => {
-      const { EventEmitter } = require("events");
-      const net = require("net");
-      const { queryUpdaterServer } = require("../src/version");
 
       // 1. Missing tag
       const mockSocketTag = new EventEmitter();
-      mockSocketTag.write = jest.fn();
-      mockSocketTag.end = jest.fn();
-      jest.spyOn(net, "createConnection").mockImplementationOnce((opts: any, cb: any) => {
+      mockSocketTag.write = vi.fn();
+      mockSocketTag.end = vi.fn();
+      (net.createConnection as Mock).mockImplementationOnce((opts: any, cb: any) => {
         process.nextTick(() => {
           cb();
           mockSocketTag.emit("data", Buffer.alloc(12)); // no 0x20 tag
@@ -316,9 +320,9 @@ describe("version", () => {
 
       // 2. Timeout
       const mockSocketTimeout = new EventEmitter();
-      mockSocketTimeout.write = jest.fn();
-      mockSocketTimeout.destroy = jest.fn();
-      jest.spyOn(net, "createConnection").mockImplementationOnce(() => mockSocketTimeout);
+      mockSocketTimeout.write = vi.fn();
+      mockSocketTimeout.destroy = vi.fn();
+      (net.createConnection as Mock).mockImplementationOnce(() => mockSocketTimeout);
 
       await expect(
         queryUpdaterServer("updater.example.com", 27500, "LINEAGE2", 20)
@@ -326,9 +330,9 @@ describe("version", () => {
 
       // 3. Single-byte version and missing hash tag
       const mockSocketSingle = new EventEmitter();
-      mockSocketSingle.write = jest.fn();
-      mockSocketSingle.end = jest.fn();
-      jest.spyOn(net, "createConnection").mockImplementationOnce((opts: any, cb: any) => {
+      mockSocketSingle.write = vi.fn();
+      mockSocketSingle.end = vi.fn();
+      (net.createConnection as Mock).mockImplementationOnce((opts: any, cb: any) => {
         process.nextTick(() => {
           cb();
           // tag 0x20 followed by 0x50 (80, bit 7 not set), no tag 0x52
@@ -345,20 +349,17 @@ describe("version", () => {
       expect(singleResult.version).toBe("80");
       expect(singleResult.manifestHash).toBe("");
 
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
   });
 
   describe("queryCdnConfig", () => {
     test("queries and parses active CDN hostname and base URL", async () => {
-      const { EventEmitter } = require("events");
-      const net = require("net");
-      const { queryCdnConfig } = require("../src/version");
       const mockSocket = new EventEmitter();
-      mockSocket.write = jest.fn();
-      mockSocket.end = jest.fn();
+      mockSocket.write = vi.fn();
+      mockSocket.end = vi.fn();
 
-      jest.spyOn(net, "createConnection").mockImplementationOnce((opts: any, cb: any) => {
+      (net.createConnection as Mock).mockImplementationOnce((opts: any, cb: any) => {
         process.nextTick(() => {
           cb();
           const cdnHost = "d35293xeakkyq4.cloudfront.net";
@@ -377,7 +378,7 @@ describe("version", () => {
       expect(result.baseUrl).toBe("http://d35293xeakkyq4.cloudfront.net/LINEAGE2");
 
       // Also verify call with default port & gameId
-      jest.spyOn(net, "createConnection").mockImplementationOnce((opts: any, cb: any) => {
+      (net.createConnection as Mock).mockImplementationOnce((opts: any, cb: any) => {
         process.nextTick(() => {
           cb();
           const cdnHost = "d35293xeakkyq4.cloudfront.net";
@@ -392,18 +393,15 @@ describe("version", () => {
       });
       const defaultResult = await queryCdnConfig("updater.example.com");
       expect(defaultResult.cdnHost).toBe("d35293xeakkyq4.cloudfront.net");
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
 
     test("handles missing tag 0x12 in CDN response", async () => {
-      const { EventEmitter } = require("events");
-      const net = require("net");
-      const { queryCdnConfig } = require("../src/version");
       const mockSocket = new EventEmitter();
-      mockSocket.write = jest.fn();
-      mockSocket.end = jest.fn();
+      mockSocket.write = vi.fn();
+      mockSocket.end = vi.fn();
 
-      jest.spyOn(net, "createConnection").mockImplementationOnce((opts: any, cb: any) => {
+      (net.createConnection as Mock).mockImplementationOnce((opts: any, cb: any) => {
         process.nextTick(() => {
           cb();
           mockSocket.emit("data", Buffer.alloc(12)); // missing 0x12 tag
@@ -414,19 +412,16 @@ describe("version", () => {
       await expect(
         queryCdnConfig("updater.example.com", 27500, "LINEAGE2")
       ).rejects.toThrow("missing CDN host tag (0x12)");
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
 
     test("handles timeout and socket error in queryCdnConfig", async () => {
-      const { EventEmitter } = require("events");
-      const net = require("net");
-      const { queryCdnConfig } = require("../src/version");
 
       // 1. Timeout
       const mockTimeout = new EventEmitter();
-      mockTimeout.write = jest.fn();
-      mockTimeout.destroy = jest.fn();
-      jest.spyOn(net, "createConnection").mockImplementationOnce(() => mockTimeout);
+      mockTimeout.write = vi.fn();
+      mockTimeout.destroy = vi.fn();
+      (net.createConnection as Mock).mockImplementationOnce(() => mockTimeout);
 
       await expect(
         queryCdnConfig("updater.example.com", 27500, "LINEAGE2", 20)
@@ -434,8 +429,8 @@ describe("version", () => {
 
       // 2. Socket error
       const mockError = new EventEmitter();
-      mockError.write = jest.fn();
-      jest.spyOn(net, "createConnection").mockImplementationOnce(() => {
+      mockError.write = vi.fn();
+      (net.createConnection as Mock).mockImplementationOnce(() => {
         process.nextTick(() => {
           mockError.emit("error", new Error("Socket closed"));
         });
@@ -446,7 +441,7 @@ describe("version", () => {
         queryCdnConfig("updater.example.com", 27500, "LINEAGE2")
       ).rejects.toThrow("Socket closed");
 
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
   });
 });
