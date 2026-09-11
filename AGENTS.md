@@ -58,4 +58,4 @@ npm run cli -- download --latest system/itemname-e.dat
 2. **Surgical Edits**: Make minimal, targeted diffs. Do not rewrite working code or delete existing documentation.
 3. **Synchronize Configurations**: Keep `AGENTS.md`, `GEMINI.md`, `CLAUDE.md`, `.cursorrules`, and `.github/copilot-instructions.md` in sync.
 4. **PR Templates & Shell Safety**: Always populate `.github/pull_request_template.md` and pass it via `gh pr create --body-file <path>`.
-5. **Worktree Isolation per Session**: For each conversation/session in this project, if there are code changes to a git repo, create a worktree and track it in the conversation/worktree to allow for better parallelization of conversations/sessions.
+5. **Worktree Isolation & Lifecycle**: For each conversation/session in this project, if there are code changes to a git repo, create a worktree and track it in the conversation/worktree to allow for better parallelization of conversations/sessions. Upon completion of a task that created a worktree (e.g. PR merged), remove said worktree.
