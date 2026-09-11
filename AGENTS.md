@@ -20,20 +20,20 @@ Welcome to **`@l2utils/l2patch`**! This repository provides tools to inspect Lin
 
 ```sh
 # Install dependencies
-npm install
+pnpm install
 
 # Build library and CLI
-npm run build
+pnpm run build
 
 # Run unit tests
-npm test
+pnpm test
 
 # Run tests with coverage
-npm run test:coverage
+pnpm run test:coverage
 
 # Run CLI locally with ts-node
-npm run cli -- version
-npm run cli -- download --latest system/itemname-e.dat
+pnpm run cli -- version
+pnpm run cli -- download --latest system/itemname-e.dat
 ```
 
 ---
@@ -54,7 +54,7 @@ npm run cli -- download --latest system/itemname-e.dat
 ---
 
 ## 4. Agent Operational Rules
-1. **Verify Before Done**: Always ensure `npm test` and `npm run build` pass before finishing.
+1. **Verify Before Done**: Always ensure `pnpm test` and `pnpm run build` pass before finishing.
 2. **Surgical Edits**: Make minimal, targeted diffs. Do not rewrite working code or delete existing documentation.
 3. **Synchronize Configurations**: Keep `AGENTS.md`, `GEMINI.md`, `CLAUDE.md`, `.cursorrules`, and `.github/copilot-instructions.md` in sync.
 4. **PR Templates & Shell Safety**: Always populate `.github/pull_request_template.md` and pass it via `gh pr create --body-file <path>`.
