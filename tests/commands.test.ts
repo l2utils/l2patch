@@ -44,7 +44,7 @@ describe("CLI commands", () => {
 
     test("downloads full zip to stdout and directs progress to stderr", async () => {
       const mockData = "dummy-zip-data";
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         headers: {
@@ -93,7 +93,7 @@ describe("CLI commands", () => {
 
     test("downloads patch delta to output file", async () => {
       const mockPatch = "dummy-patch-data";
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockResolvedValueOnce({ ok: true } as Response) // HEAD probe
         .mockResolvedValueOnce({
@@ -142,7 +142,7 @@ describe("CLI commands", () => {
     });
 
     test("downloads full update archive with progress", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockResolvedValueOnce({ ok: true } as Response) // HEAD probe
         .mockResolvedValueOnce({
@@ -204,7 +204,7 @@ describe("CLI commands", () => {
     test("downloads FileInfoMap to stdout", async () => {
       const mockManifest = "dummy-file-info-map-data";
       let capturedUrl = "";
-      global.fetch = jest.fn().mockImplementation(async (url: string) => {
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
         capturedUrl = url;
         return {
           ok: true,
@@ -240,7 +240,7 @@ describe("CLI commands", () => {
 
     test("downloads FileInfoMap to output file", async () => {
       const mockManifest = "file-info-map-file-content";
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         headers: { get: () => String(mockManifest.length) },
@@ -286,7 +286,7 @@ describe("CLI commands", () => {
     test("downloads PatchFileInfo to stdout", async () => {
       const mockManifest = "dummy-patch-file-info-data";
       let capturedUrl = "";
-      global.fetch = jest.fn().mockImplementation(async (url: string) => {
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
         capturedUrl = url;
         return {
           ok: true,
@@ -322,7 +322,7 @@ describe("CLI commands", () => {
 
     test("downloads PatchFileInfo to output file", async () => {
       const mockManifest = "patch-file-info-file-content";
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         headers: { get: () => String(mockManifest.length) },
