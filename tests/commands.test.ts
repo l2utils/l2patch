@@ -1,6 +1,18 @@
 import * as fs from "fs";
 import * as path from "path";
+import * as net from "net";
+import { EventEmitter } from "events";
 import { Command } from "commander";
+import { vi, type Mock } from "vitest";
+
+vi.mock("net", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("net")>();
+  return {
+    ...actual,
+    createConnection: vi.fn(),
+  };
+});
+
 import {
   createCdnCommand,
   createDownloadCommand,
@@ -53,7 +65,7 @@ describe("CLI commands", () => {
     });
 
     test("updater version executes and outputs version", async () => {
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         headers: new Headers({ "content-type": "application/json" }),
         text: async () => JSON.stringify({ version: "155" }),
@@ -78,11 +90,9 @@ describe("CLI commands", () => {
     });
 
     test("updater status executes and outputs status", async () => {
-      const { EventEmitter } = require("events");
-      const net = require("net");
       const mockSocket = new EventEmitter();
       const written: Buffer[] = [];
-      mockSocket.write = jest.fn((data: Buffer) => {
+      mockSocket.write = vi.fn((data: Buffer) => {
         written.push(data);
         if (written.length === 1) {
           process.nextTick(() => {
@@ -104,9 +114,9 @@ describe("CLI commands", () => {
           });
         }
       });
-      mockSocket.end = jest.fn();
+      mockSocket.end = vi.fn();
 
-      jest.spyOn(net, "createConnection").mockImplementationOnce((opts: any, cb: any) => {
+      (net.createConnection as Mock).mockImplementationOnce((opts: any, cb: any) => {
         process.nextTick(() => cb());
         return mockSocket;
       });
@@ -127,15 +137,13 @@ describe("CLI commands", () => {
       ]);
 
       expect(logs).toContain("online");
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
 
     test("updater status outputs json when --json is provided", async () => {
-      const { EventEmitter } = require("events");
-      const net = require("net");
       const mockSocket = new EventEmitter();
       const written: Buffer[] = [];
-      mockSocket.write = jest.fn((data: Buffer) => {
+      mockSocket.write = vi.fn((data: Buffer) => {
         written.push(data);
         if (written.length === 1) {
           process.nextTick(() => {
@@ -157,9 +165,9 @@ describe("CLI commands", () => {
           });
         }
       });
-      mockSocket.end = jest.fn();
+      mockSocket.end = vi.fn();
 
-      jest.spyOn(net, "createConnection").mockImplementationOnce((opts: any, cb: any) => {
+      (net.createConnection as Mock).mockImplementationOnce((opts: any, cb: any) => {
         process.nextTick(() => cb());
         return mockSocket;
       });
@@ -183,17 +191,15 @@ describe("CLI commands", () => {
       const json = JSON.parse(logs[0]);
       expect(json.online).toBe(false);
       expect(json.status).toBe("maintenance");
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
 
     test("updater cdn executes and outputs cdnHost", async () => {
-      const { EventEmitter } = require("events");
-      const net = require("net");
       const mockSocket = new EventEmitter();
-      mockSocket.write = jest.fn();
-      mockSocket.end = jest.fn();
+      mockSocket.write = vi.fn();
+      mockSocket.end = vi.fn();
 
-      jest.spyOn(net, "createConnection").mockImplementationOnce((opts: any, cb: any) => {
+      (net.createConnection as Mock).mockImplementationOnce((opts: any, cb: any) => {
         process.nextTick(() => {
           cb();
           const cdnHost = "d35293xeakkyq4.cloudfront.net";
@@ -223,7 +229,7 @@ describe("CLI commands", () => {
       ]);
 
       expect(logs).toContain("d35293xeakkyq4.cloudfront.net");
-      jest.restoreAllMocks();
+      vi.restoreAllMocks();
     });
   });
 
@@ -238,7 +244,7 @@ describe("CLI commands", () => {
 
     test("download file outputs zip to stdout with progress to stderr", async () => {
       const mockData = "dummy-zip-data";
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         headers: {
@@ -284,7 +290,7 @@ describe("CLI commands", () => {
 
     test("download file saves patch delta to output file", async () => {
       const mockPatch = "dummy-patch-data";
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockResolvedValueOnce({ ok: true } as Response) // HEAD probe
         .mockResolvedValueOnce({
@@ -343,7 +349,7 @@ describe("CLI commands", () => {
     });
 
     test("downloads full update archive with --filter all and outputs warning", async () => {
-      global.fetch = jest
+      global.fetch = vi
         .fn()
         .mockResolvedValueOnce({ ok: true } as Response) // HEAD probe
         .mockResolvedValueOnce({
@@ -387,7 +393,7 @@ describe("CLI commands", () => {
       ].join("\n");
 
       let downloadedUrls: string[] = [];
-      global.fetch = jest.fn().mockImplementation(async (url: string) => {
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
         downloadedUrls.push(url);
         if (url.includes("PatchFileInfo") || url.includes("FileInfoMap")) {
           return {
@@ -433,7 +439,7 @@ describe("CLI commands", () => {
     test("downloads FileInfoMap to stdout", async () => {
       const mockManifest = "dummy-file-info-map-data";
       let capturedUrl = "";
-      global.fetch = jest.fn().mockImplementation(async (url: string) => {
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
         capturedUrl = url;
         return {
           ok: true,
@@ -466,9 +472,76 @@ describe("CLI commands", () => {
       expect(capturedUrl).toContain("FileInfoMap_140.dat");
     });
 
+    test("downloads FileInfoMap to output file", async () => {
+      const mockManifest = "file-info-map-file-content";
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: { get: () => String(mockManifest.length) },
+        arrayBuffer: async () => Uint8Array.from(Buffer.from(mockManifest)).buffer,
+      } as unknown as Response);
+
+      const dest = path.join(testOutDir, "FileInfoMap_saved.dat");
+
+      const program = new Command();
+      program.addCommand(createFileInfoMapCommand());
+
+      await program.parseAsync([
+        "node",
+        "l2patch",
+        "file-info-map",
+        "--base-url",
+        "https://cdn.example.com",
+        "-v",
+        "140",
+        "-o",
+        dest,
+        "--no-progress",
+      ]);
+
+      expect(fs.existsSync(dest)).toBe(true);
+      expect(fs.readFileSync(dest, "utf-8")).toBe("file-info-map-file-content");
+    });
+
+    test("downloads PatchFileInfo to stdout", async () => {
+      const mockManifest = "dummy-patch-file-info-data";
+      let capturedUrl = "";
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        capturedUrl = url;
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => String(mockManifest.length) },
+          arrayBuffer: async () => Uint8Array.from(Buffer.from(mockManifest)).buffer,
+        } as unknown as Response;
+      });
+
+      const stdoutChunks: string[] = [];
+      process.stdout.write = ((chunk: any) => {
+        stdoutChunks.push(chunk.toString());
+        return true;
+      }) as any;
+
+      const program = new Command();
+      program.addCommand(createPatchFileInfoCommand());
+
+      await program.parseAsync([
+        "node",
+        "l2patch",
+        "patch-file-info",
+        "--base-url",
+        "https://cdn.example.com",
+        "-v",
+        "140",
+      ]);
+
+      expect(stdoutChunks.join("")).toBe("dummy-patch-file-info-data");
+      expect(capturedUrl).toContain("PatchFileInfo_140.dat");
+    });
+
     test("downloads PatchFileInfo to output file", async () => {
       const mockManifest = "patch-file-info-file-content";
-      global.fetch = jest.fn().mockResolvedValue({
+      global.fetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
         headers: { get: () => String(mockManifest.length) },

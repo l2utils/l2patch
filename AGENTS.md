@@ -20,21 +20,21 @@ Welcome to **`@l2utils/l2patch`**! This repository provides tools to inspect Lin
 
 ```sh
 # Install dependencies
-npm install
+pnpm install
 
 # Build library and CLI
-npm run build
+pnpm run build
 
 # Run unit tests
-npm test
+pnpm test
 
 # Run tests with coverage
-npm run test:coverage
+pnpm run test:coverage
 
 # Run CLI locally with ts-node
-npm run cli -- updater version
-npm run cli -- download file system/itemname-e.dat --latest
-npm run cli -- download version --latest
+pnpm run cli -- updater version
+pnpm run cli -- download file system/itemname-e.dat --latest
+pnpm run cli -- download version --latest
 ```
 
 ---
@@ -50,13 +50,13 @@ npm run cli -- download version --latest
   }
   ```
 * Keep `"declaration": true` and `"declarationMap": true` enabled in `tsconfig.json`.
-* Target >90% test coverage using Jest.
+* Target >90% test coverage using Vitest.
 
 ---
 
 ## 4. Agent Operational Rules
-1. **Verify Before Done**: Always ensure `npm test` and `npm run build` pass before finishing.
+1. **Verify Before Done**: Always ensure `pnpm test` and `pnpm run build` pass before finishing.
 2. **Surgical Edits**: Make minimal, targeted diffs. Do not rewrite working code or delete existing documentation.
 3. **Synchronize Configurations**: Keep `AGENTS.md`, `GEMINI.md`, `CLAUDE.md`, `.cursorrules`, and `.github/copilot-instructions.md` in sync.
 4. **PR Templates & Shell Safety**: Always populate `.github/pull_request_template.md` and pass it via `gh pr create --body-file <path>`.
-5. **Worktree Isolation per Session**: For each conversation/session in this project, if there are code changes to a git repo, create a worktree and track it in the conversation/worktree to allow for better parallelization of conversations/sessions.
+5. **Worktree Isolation & Lifecycle**: For each conversation/session in this project, if there are code changes to a git repo, create a worktree and track it in the conversation/worktree to allow for better parallelization of conversations/sessions. Upon completion of a task that created a worktree (e.g. PR merged), remove said worktree.
