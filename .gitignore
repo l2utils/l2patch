@@ -8,3 +8,4 @@ coverage/
 *.dat
 *.zip
 *.patch
+out/

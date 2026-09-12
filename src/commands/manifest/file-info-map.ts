@@ -1,10 +1,10 @@
 import * as fs from "fs";
 import * as path from "path";
 import { Command } from "commander";
-import { requireBaseUrl } from "../config";
-import { fetchFileInfoMap } from "../downloader";
-import { FileProgressReporter } from "../progress";
-import { buildConfigFromCli } from "./common";
+import { requireBaseUrl } from "../../config";
+import { fetchFileInfoMap } from "../../downloader";
+import { FileProgressReporter } from "../../progress";
+import { buildConfigFromCli } from "../common";
 
 /**
  * Creates the `file-info-map` command for the commander program.
@@ -24,6 +24,30 @@ export function createFileInfoMapCommand(): Command {
     .option(
       "-o, --output <file>",
       "Save to a file instead of streaming to stdout"
+    )
+    .option("--base-url <url>", "Base URL of the patch server / CDN")
+    .option(
+      "--cdn-host <host>",
+      "CDN Host of the patch server (e.g. d35293xeakkyq4.cloudfront.net)"
+    )
+    .option(
+      "--updater-host <host>",
+      "Updater TCP host (e.g. updater.nclauncher.ncsoft.com)"
+    )
+    .option("--updater-port <port>", "Updater TCP port")
+    .option("--game-id <id>", "NCSoft Game ID (e.g. LINEAGE2)")
+    .option(
+      "--version-url <url>",
+      "URL of the version check endpoint or manifest"
+    )
+    .option(
+      "--auth-token <token>",
+      "Authorization token for protected endpoints"
+    )
+    .option(
+      "-r, --retries <number>",
+      "Maximum retry attempts for failed requests",
+      "3"
     )
     .option("--progress", "Display download progress", true)
     .option("--no-progress", "Disable download progress")

@@ -32,8 +32,9 @@ pnpm test
 pnpm run test:coverage
 
 # Run CLI locally with ts-node
-pnpm run cli -- version
-pnpm run cli -- download --latest system/itemname-e.dat
+pnpm run cli -- updater version
+pnpm run cli -- download file system/itemname-e.dat --latest
+pnpm run cli -- download version --latest
 ```
 
 ---
@@ -45,7 +46,7 @@ pnpm run cli -- download --latest system/itemname-e.dat
 * Callable bin target: `"bin": { "l2patch": "dist/cli.js" }` so consuming packages can invoke:
   ```json
   "scripts": {
-    "fetch-assets": "l2patch download --latest system/itemname-e.dat"
+    "fetch-assets": "l2patch download file system/itemname-e.dat --latest"
   }
   ```
 * Keep `"declaration": true` and `"declarationMap": true` enabled in `tsconfig.json`.
